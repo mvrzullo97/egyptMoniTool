@@ -13,7 +13,10 @@ def connessione_db_gsegy06 () :
     
     except Exception as err:
         print(f"Errore: {err}")
-    
+
+
+# C_TLL_PLZ configurabile
+
 def select_data_from_tjmd06_lne (connessione):
     
     try:
@@ -26,7 +29,7 @@ def select_data_from_tjmd06_lne (connessione):
         res = cursor.fetchmany(size=2)
         if res :
             print(f"Ho trovato {len(res)} records nella tabella TJMD06_LNE, inizio l'estrazione")
-            return err
+            return res
         else :     
             print("Dati estratti dalla tabella TJMD06_LNE")
     except psycopg2.Error as err:
