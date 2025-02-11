@@ -1,55 +1,61 @@
 
 import dbManager
-import sys, os
+import sys, os, subprocess
 from paramiko import AutoAddPolicy, SSHClient
-# to do list
-#   1) creare dbManager per connessione al DB - OK
-#   2) estrarre dati da query su TJMD06_LNE ed inserirli in un dict
-#   3) pingare gli IP estratti ed inserire esito in dict
-
-
-# ping barriera ottica -> atterro su controller e pingo (vedi mail)
-# 'not expected' in base alla tipoogia pista 
-# 
-
-
 
 
 def checkDirectPingMachine(ip) -> str :  
     res = os.popen(f"ping {ip}").read()
-    if ("Richiesta scaduta." or "Ricevuti = 0") in res :
-        print(f"Macchina (ip: {ip}) non raggiungibile!")
-        return "F"
-    else :
+    if ("Trasmessi = 4") and ("Ricevuti = 4") and ("Persi = 0") in res :
+        if ("TTL scaduto durante il passaggio.") in res:
+            print(f"Macchina (ip: {ip}) non raggiungibile!")
+            return "F"
         print(f"Macchina (ip: {ip}) raggiunta!")
         return "T"
+    else :
+        print(f"Macchina (ip: {ip}) non raggiungibile!")
+        return "T"
 
-def checkPingMachineInSSH(ip_controller, ip_perfierica, user, pwd) : 
+def checkPingPerifericheInSSH(ip_controller, dict_periferiche, user, pwd) : 
     ssh_client = SSHClient()
     ssh_client.set_missing_host_key_policy(AutoAddPolicy())
+    str=''
     try:
-        print("Avvio connessione in ssh")
+        print(f"\nAvvio connessione in ssh ({ip_controller})\n")
         ssh_client.connect(hostname=ip_controller, username=user, password=pwd)
-        stdin, stdout, stderr = ssh_client.exec_command(f'ping -c 4 {ip_perfierica}')
-        res = stdout.read().decode()
-        print(res)
-        if  ("0 received," or "100% packet loss,") in res :
-            print(f"Periferica (ip: {ip_perfierica}) non raggiungibile!")
-            return "F"
-        else :
-            print(f"Periferica (ip: {ip_perfierica}) raggiunta!")
-            return "T"
-    finally:
-        print("Chiudo connessione in ssh")
+        
+        for key in dict_periferiche :
+
+            ip_periferica = dict_periferiche[key]["ip"]
+            stdin, stdout, stderr = ssh_client.exec_command(f'ping -c 4 {ip_periferica}')
+            res = stdout.read().decode()
+#            print(res)
+            if ("4 packets transmitted, 4 received, 0% packet loss,") in res :
+                if("Time to live exceeded") in res :
+                    print(f"Periferica {key} (ip: {ip_periferica}) non raggiungibile causa TTL scaduta!")
+                    #dict_periferiche[key]["stato"] = "F"ù
+                    str+="F"
+                else :
+                    print(f"Periferica {key} (ip: {ip_periferica}) raggiunta!")
+                    str+="T"    
+            else :
+                print(f"Periferica {key} (ip: {ip_periferica}) non raggiungibile!")
+                str+="F"
+                    #dict_periferiche[key]["stato"] = "T"
+    finally : 
+        print(f"\nChiudo connessione in ssh ({ip_controller})\n")
         ssh_client.close()
+        return str
 
 
 #piste = dbManager.select_data_from_tjmd06_lne(dbManager.connessione_db_gsegy06())
 
-'''ris atteso: prima lista TTF seconda lista FFT'''
-piste = (('1', 'K ', '10.151.48.1', '10.151.48.2', '10.151.44.3') , ('2', 'J ', '10.151.48.4', '10.151.48.5', '10.151.44.238'))
+'''ris atteso: prima lista TFT seconda lista FFT'''
+#piste_VERO = (('1', 'K ', '10.1.65.4', '10.1.64.132', '10.1.64.164'), ('2', 'J ', '10.1.65.8', '10.1.64.133', '10.1.64.165'))
 
-#piste = (('1', 'K ', '10.1.65.4', '10.1.64.132', '10.1.64.164'), ('2', 'J ', '10.1.65.8', '10.1.64.133', '10.1.64.165'))
+
+# ris atteso = TFT - TTF
+piste = (('1', 'K ', '10.1.65.4', '10.1.123.132', '10.1.64.164'), ('2', 'J ', '10.1.65.8', '10.1.64.133', '10.1.123.165'))
 
 dict_barriera_ottica = {"ip" : '172.16.0.10', "stato" : ''}
 dict_antenna = {"ip" : '172.16.0.30', "stato" : ''}
@@ -81,6 +87,11 @@ dict_pista = {"codice_pista" : '',
 dict_all_piste = {}
 
 
+
+user="root"
+pwd="Movyon.2022!"
+ip_controller = '10.1.65.4'
+
 for j in range(0, len(piste)) : 
 
     dict_barriera_ottica = {"ip" : '172.16.0.10', "stato" : ''}
@@ -96,23 +107,28 @@ for j in range(0, len(piste)) :
     dict_ip_tll_bth = {"ip" : '', "stato" : ''}
     dict_pista = {"codice_pista" : '', "tipo_pista" : '', "ip_controller" : [dict_controller,  dict_periferiche], "ip_ctv" : dict_ipv, "ip_tll_bth" : dict_ip_tll_bth}
 
+    codice_pista = piste[j][0]
+    print(f"Inizio l'analisi della Pista_{codice_pista}...\n")
+
     for i, key in enumerate(dict_pista) :
 
         info_pista = piste[j][i]
-        codice_pista = piste[j][0]
-
+        
         if key in ("ip_ctv", "ip_tll_bth"):
 
             dict_pista[key]["ip"] = info_pista
-            dict_pista[key]["stato"] = checkDirectPingMachine(info_pista) # to do chiamare func
+            dict_pista[key]["stato"] = checkDirectPingMachine(info_pista) 
 
         elif key == "ip_controller" :
-
+            ip_controller = info_pista
             dict_pista[key][0]["ip"] = info_pista
-            dict_pista[key][0]["stato"] = checkDirectPingMachine(info_pista) # to do chiamare func
+            dict_pista[key][0]["stato"] = checkDirectPingMachine(info_pista)
             
-            for key in dict_periferiche :
-                dict_periferiche[key]["stato"] = "NOT YET" # to do chiamamre func
+            stati_periferiche = checkPingPerifericheInSSH(ip_controller, dict_periferiche, user, pwd)
+
+            for x, key in enumerate(dict_periferiche) :
+                ip_periferica = dict_periferiche[key]["ip"]
+                dict_periferiche[key]["stato"] = stati_periferiche[x]
 
         else :  
             dict_pista[key] = info_pista
