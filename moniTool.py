@@ -139,14 +139,14 @@ def insertInfoIntoExcel(nome_file, dict_all_piste, colonne_Excel) :
 
 
 
-#piste = dbManager.select_data_from_tjmd06_lne(dbManager.connessione_db_gsegy06())
+piste = dbManager.select_data_from_tjmd06_lne(dbManager.connessione_db_gsegy06())
 
 '''ris atteso: prima lista TFT seconda lista FFT'''
 #piste_VERO = (('1', 'K ', '10.1.65.4', '10.1.64.132', '10.1.64.164'), ('2', 'J ', '10.1.65.8', '10.1.64.133', '10.1.64.165'))
 
 
 # ris atteso = TFT - TTF
-piste = (('1', 'K', '10.2.65.4', '10.1.123.132', '10.1.64.164'), ('2', 'I ', '10.1.65.8', '10.1.64.133', '10.1.123.165'))
+#piste = (('1', 'K', '10.2.65.4', '10.1.123.132', '10.1.64.164'), ('2', 'I ', '10.1.65.8', '10.1.64.133', '10.1.123.165'))
 
 #piste = (('1', 'K', '10.1.65.4', '10.1.123.132', '10.1.64.164'))
 
