@@ -38,7 +38,6 @@ def checkPingPeriferiche(dict_periferiche, ssh_client, tipo_pista) -> str :
             stdin, stdout, stderr = ssh_client.exec_command(f'ping -c 4 {ip_periferica}')
             res = stdout.read().decode()
 
- #           if ("4 packets transmitted, 4 received, 0% packet loss,") in res :
             if ("4 packets transmitted,") in res and ("0 received,") not in res :    
                 if("Time to live exceeded") in res :
                     print(f"Periferica {key} (ip: {ip_periferica}) non raggiungibile causa TTL scaduta!")
@@ -58,10 +57,8 @@ def startSessionInSSH(controller_pista, dict_periferiche, user, pwd, tipo_pista)
     stati_periferiche='' 
     try:
         print(f"Avvio connessione in ssh ({controller_pista})")
+
         ssh_client.connect(hostname=controller_pista, username=user, password=pwd)
-        
-
-
         stati_periferiche = checkPingPeriferiche(dict_periferiche, ssh_client, tipo_pista)
         
     finally : 
@@ -138,18 +135,9 @@ def insertInfoIntoExcel(nome_file, dict_all_piste, colonne_Excel) :
     print("File salvato in:", os.path.abspath(nome_file))
 
 
-
 piste = dbManager.select_data_from_tjmd06_lne(dbManager.connessione_db_gsegy06())
 
-'''ris atteso: prima lista TFT seconda lista FFT'''
-#piste_VERO = (('1', 'K ', '10.1.65.4', '10.1.64.132', '10.1.64.164'), ('2', 'J ', '10.1.65.8', '10.1.64.133', '10.1.64.165'))
-
-
-# ris atteso = TFT - TTF
 #piste = (('1', 'K', '10.2.65.4', '10.1.123.132', '10.1.64.164'), ('2', 'I ', '10.1.65.8', '10.1.64.133', '10.1.123.165'))
-
-#piste = (('1', 'K', '10.1.65.4', '10.1.123.132', '10.1.64.164'))
-
 
 
 dict_barriera_ottica = {"ip" : '172.16.0.10', "stato" : ''}
