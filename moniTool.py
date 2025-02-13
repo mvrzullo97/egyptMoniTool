@@ -1,10 +1,10 @@
 import dbManager
-import sys, os, time, math 
+import sys, os, time, math, re
 from paramiko import AutoAddPolicy, SSHClient
 from datetime import datetime
 import openpyxl
 from openpyxl.styles import Alignment, PatternFill, Border, Side, Font
-
+ 
 
 def checkPingMachine(ip) -> str :  
     res = os.popen(f"ping {ip}").read()
@@ -20,19 +20,19 @@ def checkPingMachine(ip) -> str :
 
 def checkPingPeriferiche(dict_periferiche, ssh_client, tipo_pista) -> str :
     
-    stati_periferiche='' 
+    lista_stato_periferiche='' 
     
     for key in dict_periferiche :
         
         if key == "anpr_zona_2" and tipo_pista != 'I' :
             print(f"Periferica anpr_zona_2 non presa in considerazione per pista di tipo {tipo_pista}")
-            stati_periferiche+="N"
+            lista_stato_periferiche+="N"
         elif key == "anpr_zona_3" and tipo_pista in ('H','I') :
              print(f"Periferica anpr_zona_3 non presa in considerazione per pista di tipo {tipo_pista}")
-             stati_periferiche+="N"
+             lista_stato_periferiche+="N"
         elif key == "WIM" and tipo_pista != 'K' :
              print(f"Periferica WIM non presa in considerazione per pista di tipo {tipo_pista}")
-             stati_periferiche+="N"
+             lista_stato_periferiche+="N"
         else :          
             ip_periferica = dict_periferiche[key]["ip"]
             stdin, stdout, stderr = ssh_client.exec_command(f'ping -c 4 {ip_periferica}')
@@ -41,31 +41,59 @@ def checkPingPeriferiche(dict_periferiche, ssh_client, tipo_pista) -> str :
             if ("4 packets transmitted,") in res and ("0 received,") not in res :    
                 if("Time to live exceeded") in res :
                     print(f"Periferica {key} (ip: {ip_periferica}) non raggiungibile causa TTL scaduta!")
-                    stati_periferiche+="F"
+                    lista_stato_periferiche+="F"
                 else :
                     print(f"Periferica {key} (ip: {ip_periferica}) raggiunta!")
-                    stati_periferiche+="T"    
+                    lista_stato_periferiche+="T"    
             else :
                 print(f"Periferica {key} (ip: {ip_periferica}) non raggiungibile!")
-                stati_periferiche+="F"
+                lista_stato_periferiche+="F"
         
-    return stati_periferiche
-    
-def startSessionInSSH(controller_pista, dict_periferiche, user, pwd, tipo_pista) : 
+    return lista_stato_periferiche
+
+    print("CIAO")
+
+def getInfoBySSHSession(controller_pista, dict_pacchetti_controller, dict_periferiche, user, pwd, tipo_pista) : 
     ssh_client = SSHClient()
     ssh_client.set_missing_host_key_policy(AutoAddPolicy())
-    stati_periferiche='' 
+    lista_stato_periferiche='' 
+    lista_vrs_pacchetti =[]
     try:
         print(f"Avvio connessione in ssh ({controller_pista})")
-
         ssh_client.connect(hostname=controller_pista, username=user, password=pwd)
-        stati_periferiche = checkPingPeriferiche(dict_periferiche, ssh_client, tipo_pista)
         
+        vrs_ctr, lista_vrs_pacchetti = getVersioneControllerAndPacchetti(controller_pista, dict_pacchetti_controller, user, pwd, ssh_client) 
+        lista_stato_periferiche = checkPingPeriferiche(dict_periferiche, ssh_client, tipo_pista)
+        
+        print("Inizio il recupero delle versioni delle periferiche raggiungibili")
+        
+        for x, key_periferiche in enumerate(dict_periferiche) :
+            print(f"{key_periferiche} e stato{lista_stato_periferiche[x]}")
+
+        # to do recuperare altre versioni -> soluzione funzione che si prende in input lista, dict, sshclient, con switch per capire dove atterrare e restituisce una lisra di versioni
+
     finally : 
         print(f"Chiudo connessione in ssh ({controller_pista})")
         ssh_client.close()
-        return stati_periferiche
+        return vrs_ctr, lista_vrs_pacchetti, lista_stato_periferiche
 
+def getVersioneControllerAndPacchetti (controller_pista, dict_pacchetti_controller, user, pwd, ssh_client) -> str :
+    
+    versioni_pacchetti=[]
+    print(f"Sono sulla macchina di Pista ({controller_pista}) per recuperare le versioni...")
+    stdin, stdout, stderr = ssh_client.exec_command('cat /etc/ansible/facts.d/customfacts.fact')
+    vrs_ctr = stdout.read().decode().strip()
+    vrs_ctr = re.search(r"=\s*(.*)", vrs_ctr)
+
+    for key in dict_pacchetti_controller :
+        stdin, stdout, stderr = ssh_client.exec_command(f'rpm -qa | grep {key}')
+        vrs_pac = stdout.read().decode().strip()
+        versioni_pacchetti.append(vrs_pac) 
+
+    print("Versioni controller e pacchetti recuperate con successo!")
+
+    return vrs_ctr, versioni_pacchetti
+    
 def insertInfoIntoExcel(nome_file, dict_all_piste, colonne_Excel) :
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -134,18 +162,31 @@ def insertInfoIntoExcel(nome_file, dict_all_piste, colonne_Excel) :
     print(f"File '{nome_file}' generato con successo!")
     print("File salvato in:", os.path.abspath(nome_file))
 
+def getVersioniPeriferiche(ssh_client) : 
+    print("CIAO")
 
-piste = dbManager.select_data_from_tjmd06_lne(dbManager.connessione_db_gsegy06())
+'''------------------------------------------ PROVE ------------------------------------------'''
+'''
+sys.exit(1)
 
-#piste = (('1', 'K', '10.2.65.4', '10.1.123.132', '10.1.64.164'), ('2', 'I ', '10.1.65.8', '10.1.64.133', '10.1.123.165'))
+'''
 
 
-dict_barriera_ottica = {"ip" : '172.16.0.10', "stato" : ''}
-dict_antenna = {"ip" : '172.16.0.30', "stato" : ''}
-dict_anpr_zona_1 = {"ip" : '172.16.0.21', "stato" : ''}
-dict_anpr_zona_2 = {"ip" : '172.16.0.22', "stato" : ''}
-dict_anpr_zona_3 = {"ip" : '172.16.0.22', "stato" : ''}
-dict_bio = {"ip" : '172.16.0.2', "stato" : ''}
+user="root"
+pwd="Movyon.2022!"
+controller_pista = '10.1.65.4'
+inizio_esecuzione = datetime.now().replace(microsecond=0)
+#piste = dbManager.select_data_from_tjmd06_lne(dbManager.connessione_db_gsegy06())
+
+piste = (('1', 'K', '10.1.65.4', '10.1.123.132', '10.1.64.164'), ('2', 'I ', '10.1.65.8', '10.1.64.133', '10.1.123.165'))
+
+
+dict_barriera_ottica = {"ip" : '172.16.0.10', "stato" : '', "versione" : ''}
+dict_antenna = {"ip" : '172.16.0.30', "stato" : '', "versione" : ''}
+dict_anpr_zona_1 = {"ip" : '172.16.0.21', "stato" : '', "versione" : ''}
+dict_anpr_zona_2 = {"ip" : '172.16.0.22', "stato" : '', "versione" : ''}
+dict_anpr_zona_3 = {"ip" : '172.16.0.22', "stato" : '', "versione" : ''}
+dict_bio = {"ip" : '172.16.0.2', "stato" : '', "versioneBIO" : '', "versioneDAC" : ''}
 dict_stampante = {"ip" : '172.16.0.40', "stato" : ''}
 dict_fare_display = {"ip" : '172.16.0.60', "stato" : ''}
 dict_WIM = {"ip" : '172.16.0.70', "stato" : ''}
@@ -160,9 +201,16 @@ dict_periferiche = {"barriera_ottica" : dict_barriera_ottica,
                     "fare_display" : dict_fare_display,
                     "WIM" : dict_WIM}
 
-dict_controller = {"ip" : '', "stato" : ''}
-dict_axis_external = {"ip" : '', "stato" : ''}
-dict_axis_internal = {"ip" : '', "stato" : ''}
+dict_pacchetti_controller = {"movyonEgypt-" :'',
+                             "movyonEgyptConf" :'',
+                             "arcd_application_base" :'',
+                             "arcdLibs" :'',
+                             "arcd-" :'',
+                             "arcd_application_core-" :''}
+
+dict_controller = {"ip" : '', "stato" : '', "versione" :'', "versione_pacchetti" :dict_pacchetti_controller}
+dict_axis_external = {"ip" : '', "stato" : '', "versione" : ''}
+dict_axis_internal = {"ip" : '', "stato" : '', "versione" : ''}
 
 
 dict_pista = {"codice_pista" : '',
@@ -173,27 +221,24 @@ dict_pista = {"codice_pista" : '',
 
 dict_all_piste = {}
 
-user="root"
-pwd="Movyon.2022!"
-controller_pista = '10.1.65.4'
-inizio_esecuzione = datetime.now().replace(microsecond=0)
 print(f"\nInizio esecuzione: {inizio_esecuzione}")
 
 for j in range(0, len(piste)) : 
 
-    dict_barriera_ottica = {"ip" : '172.16.0.10', "stato" : ''}
-    dict_antenna = {"ip" : '172.16.0.30', "stato" : ''}
-    dict_anpr_zona_1 = {"ip" : '172.16.0.21', "stato" : ''}
-    dict_anpr_zona_2 = {"ip" : '172.16.0.22', "stato" : ''}
-    dict_anpr_zona_3 = {"ip" : '172.16.0.22', "stato" : ''}
-    dict_bio = {"ip" : '172.16.0.2', "stato" : ''}
+    dict_pacchetti_controller = {"movyonEgypt-" :'', "movyonEgyptConf" :'', "arcd_application_base" :'', "arcdLibs" :'', "arcd-" :'', "arcd_application_core-" :''}
+    dict_barriera_ottica = {"ip" : '172.16.0.10', "stato" : '', "versione" : ''}
+    dict_antenna = {"ip" : '172.16.0.30', "stato" : '', "versione" : ''}
+    dict_anpr_zona_1 = {"ip" : '172.16.0.21', "stato" : '', "versione" : ''}
+    dict_anpr_zona_2 = {"ip" : '172.16.0.22', "stato" : '', "versione" : ''}
+    dict_anpr_zona_3 = {"ip" : '172.16.0.22', "stato" : '', "versione" : ''}
+    dict_bio = {"ip" : '172.16.0.2', "stato" : '', "versioneBIO" : '', "versioneDAC" : ''}
     dict_stampante = {"ip" : '172.16.0.40', "stato" : ''}
     dict_fare_display = {"ip" : '172.16.0.60', "stato" : ''}
     dict_WIM = {"ip" : '172.16.0.70', "stato" : ''}
     dict_periferiche = {"barriera_ottica" : dict_barriera_ottica, "antenna" : dict_antenna, "anpr_zona_1" : dict_anpr_zona_1, "anpr_zona_2" : dict_anpr_zona_2, "anpr_zona_3" : dict_anpr_zona_3, "bio" : dict_bio, "stampante" : dict_stampante, "fare_display" : dict_fare_display, "WIM" : dict_WIM}
-    dict_controller = {"ip" : '', "stato" : ''}
-    dict_axis_external = {"ip" : '', "stato" : ''}
-    dict_axis_internal = {"ip" : '', "stato" : ''}
+    dict_controller = {"ip" : '', "stato" : '', "versione" : '', "versione_pacchetti" :dict_pacchetti_controller}
+    dict_axis_external = {"ip" : '', "stato" : '', "versione" : ''}
+    dict_axis_internal = {"ip" : '', "stato" : '', "versione" : ''}
     dict_pista = {"codice_pista" : '', "tipo_pista" : '', "controller_pista" : [dict_controller,  dict_periferiche], "axis_external" : dict_axis_external, "axis_internal" : dict_axis_internal}
 
     codice_pista = int(piste[j][0])
@@ -209,20 +254,29 @@ for j in range(0, len(piste)) :
             dict_pista[key]["stato"] = checkPingMachine(info_pista) 
 
         elif key == "controller_pista" :
+            
             controller_pista = info_pista
             dict_pista[key][0]["ip"] = info_pista
             dict_pista[key][0]["stato"] = checkPingMachine(info_pista)
             
-            if dict_pista[key][0]["stato"] == "T" :
-                stati_periferiche = startSessionInSSH(controller_pista, dict_periferiche, user, pwd, tipo_pista)
+            versione_controller, lista_versione_pacchetti, lista_stato_periferiche = getInfoBySSHSession(controller_pista, 
+                                                                                                       dict_pacchetti_controller, 
+                                                                                                       dict_periferiche, 
+                                                                                                       user, pwd, tipo_pista)
             
-            else:
-                print("Macchina controller_ pista non raggiungibile, salto la verifica delle periferiche")
-                stati_periferiche = 'FFFFFFFFF'
+            dict_pista[key][0]["versione"] = versione_controller
+            #inserisco la versione dei pacchetti del controller
+            #TO DO vedere il caso di '\n' per un pacchetto
+            for i, key_pacchetto in enumerate(dict_pacchetti_controller) :
+                dict_pista[key][0]["versione_pacchetti"][key_pacchetto] = lista_versione_pacchetti[i]
+
+            if dict_pista[key][0]["stato"] == "F" :
+                print("Macchina controller_ pista non raggiungibile, considero non raggiungibili le periferiche relative")
+                lista_stato_periferiche = 'FFFFFFFFF'
 
             for x, key in enumerate(dict_periferiche) :
                 ip_periferica = dict_periferiche[key]["ip"]
-                dict_periferiche[key]["stato"] = stati_periferiche[x]
+                dict_periferiche[key]["stato"] = lista_stato_periferiche[x]
 
         elif key == "codice_pista" :
             dict_pista[key] = int(info_pista)
@@ -232,15 +286,14 @@ for j in range(0, len(piste)) :
     
     dict_all_piste["Pista_"+ str(codice_pista)] = dict_pista.copy()
 
-
+print(dict_all_piste)
 nome_file_Excel="report_piste_Egitto.xlsx"
-
 colonne_Excel = ('Codice Pista', 'Tipo Pista', 'Controller', 'Barriera Ottica', 'Antenna RFID', 
                  'Telecamera ANPR Zona 1', 'Telecamera ANPR Zona 2', 'Telecamera ANPR Zona 3',
                   'BIO Board', 'Stampante', 'Fare Display', 'WIM', 'Telecamere CCTV Esterna ', 'Telecamere CCTV Interna ')
 
 
-insertInfoIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel)
+#insertInfoIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel)
 
 fine_esecuzione = datetime.now().replace(microsecond=0)
 print(f"Fine esecuzione: {fine_esecuzione}")
