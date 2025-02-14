@@ -186,8 +186,8 @@ def getInfoBySSHSession(controller_pista, dict_pacchetti_controller, dict_perife
 
     finally : 
         print(f"Chiudo connessione in ssh ({controller_pista})")
+        
         ssh_client.close()
-
         sys.exit(1) # TO DO TOGLIERE
         #return vrs_ctr, lista_vrs_pacchetti, lista_stato_periferiche
 
@@ -223,11 +223,40 @@ def isOutputGenerated(channel, timeout=10):
         output = "\n".join(output_lines[1:])
     return True, output
 
-def findVersioneInText(text, keyword):
-    for line in text.split("\n"):  
-        if keyword in line:  
-            return line  
-    return None 
+def invokeShellAndInsertUserAndPassword(ssh_client_pista: SSHClient, ip_periferica, user, pwd) :
+    channel = ssh_client_pista.invoke_shell()
+    time.sleep(1)
+    channel.recv(9999)
+    channel.send(f"ssh {user}@{ip_periferica}\n")
+    esito = isOutputGenerated(channel)
+    if esito :
+        channel.send(pwd + "\n")
+        time.sleep(5)
+    return esito, channel
+
+def getVersioniDacAndBio(channel_bio: Channel, esito) :
+    
+    if not channel_bio or channel_bio.closed :
+        print("Il canale è chiuso, termino l'esecuzione")
+        return None
+    if esito:
+        channel_bio.send("/FN0/S30DacDRIVER/dac -v\n")
+        time.sleep(10)
+        esito, versione_DAC = isOutputGenerated(channel_bio)
+        if esito : 
+            channel_bio.send("vi /FN0/version.txt \n")
+            time.sleep(10)
+            print(versione_DAC)
+            esito, file_txt_BIO = isOutputGenerated(channel_bio)
+            if isOutputGenerated(channel_bio) :
+                file_txt_BIO = re.sub(r'\x1b\[[0-9;?]*[A-Za-z]', '', file_txt_BIO)
+                keys = ["FRW BIO for update_BIO_EGYPT v", "BIO v", "SAM_ATECH v"]
+                versione_BIO = ''
+                for k in keys:
+                    match = re.search(rf"{k}\d+\.\d+", file_txt_BIO)
+                    versione_BIO += match.group() + ", "
+                    versione_BIO = versione_BIO.rstrip(",")
+    return versione_DAC, versione_BIO
 
 def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_stato_periferiche) -> str : 
 
@@ -237,9 +266,13 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
         #print(ip_periferica)
         match key:
             case "barriera_ottica" if stato_periferica == "T":
+
                 print("Sono sulla barriera")
+
             case "antenna" if stato_periferica == "T":
+
                 print("Sono sulla antenna")
+
             case "anpr_zona_1" if stato_periferica == "T":
                 print("Sono sulla anprz1")
                 print("front end NO SSH")
@@ -249,13 +282,15 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
             case "anpr_zona_3" if stato_periferica == "T":
                 print("Sono sulla anprz3")
                 print("front end NO SSH")
-            case "bio" if stato_periferica == "T":
-                
-                channel_bio = ssh_client_pista.invoke_shell()
-                channel_bio.recv(1024)  
-                print("Invoco shell interattiva per accedere alle periferiche di Pista...")
+            
+            case "bio" if stato_periferica == "T":                
+        
                 user_bio = "root"
-                pwd_bio = "itsegypt"
+                pwd_bio = "itsegypt"  
+                print("Invoco shell interattiva per accedere alle periferiche di Pista...")
+                channel_bio = ssh_client_pista.invoke_shell()
+                channel_bio.recv(1024)
+
                 print("Recupero versione di BIO Board e DAC Driver")
                 
                 channel_bio.send(f"ssh {user_bio}@{ip_periferica}\n")
@@ -269,8 +304,7 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                         channel_bio.send("/FN0/S30DacDRIVER/dac -v\n")
                         time.sleep(10)
                         esito, versione_DAC = isOutputGenerated(channel_bio)
-                        if esito :
-                            
+                        if esito :       
                             channel_bio.send("vi /FN0/version.txt \n")
                             time.sleep(10)
                             esito, file_txt_BIO = isOutputGenerated(channel_bio)
@@ -285,23 +319,10 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
 
                 print(f"Versione DAC recuperata: {versione_DAC}") 
                 print(f"Versione BIO recuperata: {versione_BIO}")
-            
-            case "stampante" if stato_periferica == "T":
-                print("Sono sulla stampante")
-                print("NESSUNA VERSIONE")
-            case "fare_display" if stato_periferica == "T":
-                print("Sono sulla fare_display")
-                print("NESSUNA VERSIONE")
-            case "WIM" if stato_periferica == "T":
-                print("Sono sulla WIM")
-                print("NESSUNA VERSIONE")
-
-
-
-    ssh_client_pista.close()
-
-
-
+                print("Chiudo canale ssh")
+                channel_bio.close()
+    
+    
 
 def insertInfoIntoExcel(nome_file, dict_all_piste, colonne_Excel) :
     wb = openpyxl.Workbook()
@@ -493,7 +514,7 @@ for j in range(0, len(piste)) :
                                                                                                        user, pwd, tipo_pista)
             
             dict_pista[key][0]["versione"] = versione_controller
-            #inserisco la versione dei pacchetti del controller
+
             #TO DO vedere il caso di '\n' per un pacchetto
             for i, key_pacchetto in enumerate(dict_pacchetti_controller) :
                 dict_pista[key][0]["versione_pacchetti"][key_pacchetto] = lista_versione_pacchetti[i]
@@ -514,7 +535,12 @@ for j in range(0, len(piste)) :
     
     dict_all_piste["Pista_"+ str(codice_pista)] = dict_pista.copy()
 
+
+
 print(dict_all_piste)
+
+
+
 nome_file_Excel="report_piste_Egitto.xlsx"
 colonne_Excel = ('Codice Pista', 'Tipo Pista', 'Controller', 'Barriera Ottica', 'Antenna RFID', 
                  'Telecamera ANPR Zona 1', 'Telecamera ANPR Zona 2', 'Telecamera ANPR Zona 3',
@@ -530,3 +556,34 @@ delta_min = delta.total_seconds()/60
 delta_min = math.trunc(delta_min * 100)/100
 
 print(f"Tempo di esecuzione totale: {delta_min} minuti")
+
+
+
+
+'''DOPO PROVO 
+esito, channel_bio = invokeShellAndInsertUserAndPassword(ssh_client_pista, ip_periferica, user_bio, pwd_bio) 
+                
+                print("Recupero versione di BIO Board e DAC Driver")
+                if isOutputGenerated(channel_bio)[0] :
+                        print("Recupero le informazioni utili di DAC e BIO...")
+                        channel_bio.send("/FN0/S30DacDRIVER/dac -v\n")
+                        time.sleep(10)
+                        esito, versione_DAC = isOutputGenerated(channel_bio)
+                        if esito :
+                            
+                            channel_bio.send("vi /FN0/version.txt \n")
+                            time.sleep(10)
+                            esito, file_txt_BIO = isOutputGenerated(channel_bio)
+                            if isOutputGenerated(channel_bio) :
+                                file_txt_BIO = re.sub(r'\x1b\[[0-9;?]*[A-Za-z]', '', file_txt_BIO)
+                                keys = ["FRW BIO for update_BIO_EGYPT v", "BIO v", "SAM_ATECH v"]
+                                versione_BIO = ''
+                                for k in keys:
+                                    match = re.search(rf"{k}\d+\.\d+", file_txt_BIO)
+                                    versione_BIO += match.group() + ", "
+                                    versione_BIO = versione_BIO.rstrip(",")
+                #versione_DAC, versione_BIO = getVersioniDacAndBio(channel_bio, esito)
+                channel_bio.close()
+                print("Chiudo Shell interattiva")
+                print(f"Versione DAC recuperata: {versione_DAC}") 
+                print(f"Versione BIO recuperata: {versione_BIO}")'''
