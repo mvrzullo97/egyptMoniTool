@@ -1,10 +1,102 @@
 import dbManager
-import sys, os, time, math, re
-from paramiko import AutoAddPolicy, SSHClient
+import sys, os, time, math, re, time
+from paramiko import AutoAddPolicy, ProxyCommand, SSHClient, Channel
 from datetime import datetime
 import openpyxl
 from openpyxl.styles import Alignment, PatternFill, Border, Side, Font
- 
+
+
+'''------------------------------------- PROVE -------------------------------------'''
+
+def isOutputGenerated(channel, timeout=10):
+    start_time = time.time()
+    output=''
+    while time.time() - start_time < timeout:
+        if channel.recv_ready():
+            output += channel.recv(4096).decode()
+        else:
+            break
+        time.sleep(0.5)
+    
+    output_lines = output.split("\n")
+    if len(output_lines) > 1:
+        output = "\n".join(output_lines[1:])
+    return True, output
+
+def connectSSHx2():
+    # Configurazione della connessione pista -> perfierica
+    ip_pista = "10.1.65.4"
+    user_pista = "root"
+    pwd_pista = "Movyon.2022!"
+
+    ip_perfierica = "172.16.0.2"
+    user_perfierica = "root"
+    pwd_perfierica = "itsegypt"
+
+    ssh_client_pista = SSHClient()
+    ssh_client_pista.set_missing_host_key_policy(AutoAddPolicy())
+    ssh_client_pista.connect(ip_pista, username=user_pista, password=pwd_pista)
+
+    
+    channel = ssh_client_pista.invoke_shell()
+    channel.recv(1024)  
+    print("Invoco la shell interattiva...")
+    channel.send(f"ssh {user_perfierica}@{ip_perfierica}\n")
+    time.sleep(5)
+    if isOutputGenerated(channel)[0]: # Prendo solo il valore di ritorno booleano
+        channel.send(pwd_perfierica + "\n")
+        print("Inserisco la password....")
+        time.sleep(5)
+        if isOutputGenerated(channel)[0]:
+            print("Recupero le informazioni utili di DAC e BIO...")
+            channel.send("/FN0/S30DacDRIVER/dac -v\n")
+            time.sleep(10)
+            esito, versione_DAC = isOutputGenerated(channel)
+            if esito :
+                print(f"Esito_DAC: {esito}")
+                print(f"Versione_DAC: {versione_DAC}")
+                channel.send("vi /FN0/version.txt \n")
+                time.sleep(10)
+                esito, versione_BIO = isOutputGenerated(channel)
+                if isOutputGenerated(channel) :
+                    print(f"Esito_BIO: {esito}")
+                    print(f"Versione_BIO: {versione_BIO}")
+    else:       
+        print("Nessun output generato!")
+
+    channel.close()
+    ssh_client_pista.close()
+
+    return versione_BIO
+
+#bio = connectSSHx2()
+#print(bio)
+
+'''
+
+def findVersioneInText(text, keyword):
+    for line in text.split("\n"):  # Divide la stringa in righe
+        if keyword in line:  # Controlla se la parola chiave è nella riga
+            return line  # Restituisce la prima riga trovata
+    return None  # Se non trova nulla
+
+#line = findVersioneInText(stringa_bio, "SAM_ATECH")
+#print(line)
+stringa_pulita = re.sub(r'\x1b\[[0-9;?]*[A-Za-z]', '', stringa_bio)
+
+keys = ["FRW BIO for update_BIO_EGYPT v", "BIO v", "SAM_ATECH v"]
+versione_BIO = ''
+for k in keys:
+    match = re.search(rf"{k}\d+\.\d+", stringa_bio)
+    versione_BIO +=  match.group() +", "
+    print(f"Versione BIO recuperata: {versione_BIO}")
+
+sys.exit(1)
+
+'''
+
+
+
 
 def checkPingMachine(ip) -> str :  
     res = os.popen(f"ping {ip}").read()
@@ -56,26 +148,48 @@ def checkPingPeriferiche(dict_periferiche, ssh_client, tipo_pista) -> str :
 def getInfoBySSHSession(controller_pista, dict_pacchetti_controller, dict_periferiche, user, pwd, tipo_pista) : 
     ssh_client = SSHClient()
     ssh_client.set_missing_host_key_policy(AutoAddPolicy())
-    lista_stato_periferiche='' 
-    lista_vrs_pacchetti =[]
-    try:
+    
+    lista_stato_periferiche='FFFFFTFFF' # da settare a '' dopo 
+    
+    try:       
+        ssh_client.connect(hostname=controller_pista, username=user, password=pwd, allow_agent=True, look_for_keys=True)
         print(f"Avvio connessione in ssh ({controller_pista})")
-        ssh_client.connect(hostname=controller_pista, username=user, password=pwd)
+        #vrs_ctr, lista_vrs_pacchetti = getVersioneControllerAndPacchetti(controller_pista, dict_pacchetti_controller, user, pwd, ssh_client) 
+        #lista_stato_periferiche = checkPingPeriferiche(dict_periferiche, ssh_client, tipo_pista)
         
-        vrs_ctr, lista_vrs_pacchetti = getVersioneControllerAndPacchetti(controller_pista, dict_pacchetti_controller, user, pwd, ssh_client) 
-        lista_stato_periferiche = checkPingPeriferiche(dict_periferiche, ssh_client, tipo_pista)
-        
-        print("Inizio il recupero delle versioni delle periferiche raggiungibili")
-        
-        for x, key_periferiche in enumerate(dict_periferiche) :
-            print(f"{key_periferiche} e stato{lista_stato_periferiche[x]}")
+
+        #TO DO, va cancellato poi
+        dict_barriera_ottica = {"ip" : '172.16.0.10', "stato" : '', "versione" : ''}
+        dict_antenna = {"ip" : '172.16.0.30', "stato" : '', "versione" : ''}
+        dict_anpr_zona_1 = {"ip" : '172.16.0.21', "stato" : '', "versione" : ''}
+        dict_anpr_zona_2 = {"ip" : '172.16.0.22', "stato" : '', "versione" : ''}
+        dict_anpr_zona_3 = {"ip" : '172.16.0.22', "stato" : '', "versione" : ''}
+        dict_bio = {"ip" : '172.16.0.2', "stato" : '', "versioneBIO" : '', "versioneDAC" : ''}
+        dict_stampante = {"ip" : '172.16.0.40', "stato" : ''}
+        dict_fare_display = {"ip" : '172.16.0.60', "stato" : ''}
+        dict_WIM = {"ip" : '172.16.0.70', "stato" : ''}
+
+        dict_periferiche = {"barriera_ottica" : dict_barriera_ottica,
+                        "antenna" : dict_antenna,
+                        "anpr_zona_1" : dict_anpr_zona_1,
+                            "anpr_zona_2" : dict_anpr_zona_2,
+                            "anpr_zona_3" : dict_anpr_zona_3,
+                            "bio" : dict_bio,
+                            "stampante" : dict_stampante,
+                            "fare_display" : dict_fare_display,
+                            "WIM" : dict_WIM}
+            
+        getVersioniPeriferiche(ssh_client, dict_periferiche, lista_stato_periferiche)
+
 
         # to do recuperare altre versioni -> soluzione funzione che si prende in input lista, dict, sshclient, con switch per capire dove atterrare e restituisce una lisra di versioni
 
     finally : 
         print(f"Chiudo connessione in ssh ({controller_pista})")
         ssh_client.close()
-        return vrs_ctr, lista_vrs_pacchetti, lista_stato_periferiche
+
+        sys.exit(1) # TO DO TOGLIERE
+        #return vrs_ctr, lista_vrs_pacchetti, lista_stato_periferiche
 
 def getVersioneControllerAndPacchetti (controller_pista, dict_pacchetti_controller, user, pwd, ssh_client) -> str :
     
@@ -93,7 +207,102 @@ def getVersioneControllerAndPacchetti (controller_pista, dict_pacchetti_controll
     print("Versioni controller e pacchetti recuperate con successo!")
 
     return vrs_ctr, versioni_pacchetti
+
+def isOutputGenerated(channel, timeout=10):
+    start_time = time.time()
+    output=''
+    while time.time() - start_time < timeout:
+        if channel.recv_ready():
+            output += channel.recv(4096).decode()
+        else:
+            break
+        time.sleep(0.5)
     
+    output_lines = output.split("\n")
+    if len(output_lines) > 1:
+        output = "\n".join(output_lines[1:])
+    return True, output
+
+def findVersioneInText(text, keyword):
+    for line in text.split("\n"):  
+        if keyword in line:  
+            return line  
+    return None 
+
+def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_stato_periferiche) -> str : 
+
+    for i, key in enumerate(dict_periferiche) :
+        stato_periferica = lista_stato_periferiche[i]
+        ip_periferica = dict_periferiche[key]["ip"]
+        #print(ip_periferica)
+        match key:
+            case "barriera_ottica" if stato_periferica == "T":
+                print("Sono sulla barriera")
+            case "antenna" if stato_periferica == "T":
+                print("Sono sulla antenna")
+            case "anpr_zona_1" if stato_periferica == "T":
+                print("Sono sulla anprz1")
+                print("front end NO SSH")
+            case "anpr_zona_2" if stato_periferica == "T":
+                print("Sono sulla anprz2")
+                print("front end NO SSH")
+            case "anpr_zona_3" if stato_periferica == "T":
+                print("Sono sulla anprz3")
+                print("front end NO SSH")
+            case "bio" if stato_periferica == "T":
+                
+                channel_bio = ssh_client_pista.invoke_shell()
+                channel_bio.recv(1024)  
+                print("Invoco shell interattiva per accedere alle periferiche di Pista...")
+                user_bio = "root"
+                pwd_bio = "itsegypt"
+                print("Recupero versione di BIO Board e DAC Driver")
+                
+                channel_bio.send(f"ssh {user_bio}@{ip_periferica}\n")
+                time.sleep(5)
+                if isOutputGenerated(channel_bio)[0] :
+                    channel_bio.send(pwd_bio + "\n")
+                    print("Inserisco la password....")
+                    time.sleep(5)
+                    if isOutputGenerated(channel_bio)[0] :
+                        print("Recupero le informazioni utili di DAC e BIO...")
+                        channel_bio.send("/FN0/S30DacDRIVER/dac -v\n")
+                        time.sleep(10)
+                        esito, versione_DAC = isOutputGenerated(channel_bio)
+                        if esito :
+                            
+                            channel_bio.send("vi /FN0/version.txt \n")
+                            time.sleep(10)
+                            esito, file_txt_BIO = isOutputGenerated(channel_bio)
+                            if isOutputGenerated(channel_bio) :
+                                file_txt_BIO = re.sub(r'\x1b\[[0-9;?]*[A-Za-z]', '', file_txt_BIO)
+                                keys = ["FRW BIO for update_BIO_EGYPT v", "BIO v", "SAM_ATECH v"]
+                                versione_BIO = ''
+                                for k in keys:
+                                    match = re.search(rf"{k}\d+\.\d+", file_txt_BIO)
+                                    versione_BIO += match.group() + ", "
+                                    versione_BIO = versione_BIO.rstrip(",")
+
+                print(f"Versione DAC recuperata: {versione_DAC}") 
+                print(f"Versione BIO recuperata: {versione_BIO}")
+            
+            case "stampante" if stato_periferica == "T":
+                print("Sono sulla stampante")
+                print("NESSUNA VERSIONE")
+            case "fare_display" if stato_periferica == "T":
+                print("Sono sulla fare_display")
+                print("NESSUNA VERSIONE")
+            case "WIM" if stato_periferica == "T":
+                print("Sono sulla WIM")
+                print("NESSUNA VERSIONE")
+
+
+
+    ssh_client_pista.close()
+
+
+
+
 def insertInfoIntoExcel(nome_file, dict_all_piste, colonne_Excel) :
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -162,14 +371,33 @@ def insertInfoIntoExcel(nome_file, dict_all_piste, colonne_Excel) :
     print(f"File '{nome_file}' generato con successo!")
     print("File salvato in:", os.path.abspath(nome_file))
 
-def getVersioniPeriferiche(ssh_client) : 
-    print("CIAO")
 
-'''------------------------------------------ PROVE ------------------------------------------'''
-'''
-sys.exit(1)
+    print("Inizio il recupero delle versioni delle periferiche raggiungibili")
+    # to do switch case
+    
 
+
+
+
+
+    
+    '''ssh_client_perfierica = SSHClient()
+    ssh_client_perfierica.set_missing_host_key_policy(AutoAddPolicy())
+    try:
+        ssh_client_perfierica.connect(hostname="172.16.0.10", username="root", password="controlcard", sock=channel)
+        print(f"Connessione a 172.16.0.10 riuscita!")
+        stdin, stdout, stderr = ssh_client_perfierica.exec_command('/var/mif/mif -v')
+        a = stdout.read().decode().strip()
+        print(a)
+    finally:
+        ssh_client_perfierica.close()'''
+    '''for x, key_periferiche in enumerate(dict_periferiche) :
+        
+        
+        
+        print(f"{key_periferiche} e stato{lista_stato_periferiche[x]}")   
 '''
+
 
 
 user="root"
