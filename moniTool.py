@@ -7,75 +7,15 @@ from openpyxl.styles import Alignment, PatternFill, Border, Side, Font
 
 
 '''------------------------------------- PROVE -------------------------------------'''
-
-'''def isOutputGenerated(channel, timeout=10):
-    start_time = time.time()
-    output=''
-    while time.time() - start_time < timeout:
-        if channel.recv_ready():
-            output += channel.recv(4096).decode()
-        else:
-            break
-        time.sleep(0.5)
-    
-    output_lines = output.split("\n")
-    if len(output_lines) > 1:
-        output = "\n".join(output_lines[1:])
-    return True, output
-
-def connectSSHx2():
-    # Configurazione della connessione pista -> perfierica
-    ip_pista = "10.1.65.4"
-    user_pista = "root"
-    pwd_pista = "Movyon.2022!"
-
-    ip_perfierica = "172.16.0.30"
-    user_perfierica = "root"
-    pwd_perfierica = "UHF-RFID-Dev"
-
-    ssh_client_pista = SSHClient()
-    ssh_client_pista.set_missing_host_key_policy(AutoAddPolicy())
-    ssh_client_pista.connect(ip_pista, username=user_pista, password=pwd_pista)
-
-    
-    channel = ssh_client_pista.invoke_shell()
-    channel.recv(1024)  
-    print("Invoco la shell interattiva...")
-    channel.send(f"ssh {user_perfierica}@{ip_perfierica}\n")
-    time.sleep(20)
-    if isOutputGenerated(channel)[0]: # Prendo solo il valore di ritorno booleano
-        channel.send(pwd_perfierica + "\n")
-        print("Inserisco la password....")
-        time.sleep(20)
-        if isOutputGenerated(channel)[0]:
-            print("Recupero le informazioni utili di barriera")
-            channel.send("grep 'KAT ACQ' /flash/log/KatAcqFFM.log\n")
-            time.sleep(10)
-            esito, v_antenna = isOutputGenerated(channel)
-            match = re.search(r"--\s*(KAT ACQ \d+\.\d+)\s*--", v_antenna)
-            v_antenna = match.group(1)
-            print("verisone finale antenna" + v_antenna)
-    else:       
-        print("Nessun output generato!")
-
-    channel.close()
-    ssh_client_pista.close()
-
-    return v_antenna
-
-barr = connectSSHx2()
-#print(barr)
-
-
-    
-
-
-sys.exit(1)'''
+'''
 
 
 
 
 
+
+sys.exit(1)
+'''
 
 def checkPingMachine(ip) -> str :  
     res = os.popen(f"ping {ip}").read()
@@ -164,9 +104,12 @@ def getInfoBySSHSession(controller_pista, dict_pacchetti_controller, dict_perife
         # to do recuperare altre versioni -> soluzione funzione che si prende in input lista, dict, sshclient, con switch per capire dove atterrare e restituisce una lisra di versioni
 
     finally : 
+        fine_esecuzione_rec = datetime.now().replace(microsecond=0)
+        print(f"fine recupero {fine_esecuzione_rec}")
         print(f"Chiudo connessione in ssh ({controller_pista})")
         
         ssh_client.close()
+        
         sys.exit(1) # TO DO TOGLIERE
         #return vrs_ctr, lista_vrs_pacchetti, lista_stato_periferiche
 
@@ -203,7 +146,8 @@ def isOutputGenerated(channel, timeout=10):
     return True, output
 
 def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_stato_periferiche) -> str : 
-    
+    inizio_recupero = datetime.now().replace(microsecond=0)
+    print(f"inizio recupero {inizio_recupero}")
     for i, key in enumerate(dict_periferiche) :
         stato_periferica = lista_stato_periferiche[i]
         ip_periferica = dict_periferiche[key]["ip"]
@@ -213,52 +157,41 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
         match key:
             case "barriera_ottica" if stato_periferica == "T":
                 user_barriera = "root"
-                pwd_barriera = "controlcard"  
-                channel_barriera = ssh_client_pista.invoke_shell()
-                channel_barriera.recv(1024)
+                pwd_barriera = "controlcard"
+                stringa_versione = "Mif version is: "
+                barriera_cmd = "/var/mif/mif -v"
                 
-                print("Recupero la versione della Barriera Ottica tramite Shell interattiva...")
-
-                channel_barriera.send(f"ssh {user_barriera}@{ip_periferica}\n")
-                time.sleep(20)
-                if isOutputGenerated(channel_barriera)[0]:
-                    channel_barriera.send(pwd_barriera + "\n")
-                    time.sleep(20)
-                    if isOutputGenerated(channel_barriera)[0]:
-                        channel_barriera.send("/var/mif/mif -v\n")
-                        time.sleep(10)
-                        esito, versione_barriera = isOutputGenerated(channel_barriera)                        
-                v = re.sub(r'\x1b\[[0-9;?]*[A-Za-z]', '', versione_barriera)
-                match = re.search(rf"Mif version is: \d+\.\d+", v)
-                v = match.group()
-                versione_barriera = v.split(": ")[1]
+                print("Recupero la versione della Barriera Ottica...")
+                
+                cmd = f"sshpass -p {pwd_barriera} ssh {user_barriera}@{ip_periferica} '{barriera_cmd}' "
+                stdin, stdout, stderr = ssh_client_pista.exec_command(cmd)
+                file_content = stdout.read().decode()
+                versione_barriera = file_content.split(f"{stringa_versione}")[1].split("\n")[0]
                 
                 print(f"Versione Barriera Ottica recueperata: {versione_barriera}")
-                channel_barriera.close()
-
+                
             case "antenna" if stato_periferica == "T":
                 
                 user_antenna = "root"
-                pwd_antenna = "UHF-RFID-Dev"  
-                channel_antenna = ssh_client_pista.invoke_shell()
-                channel_antenna.recv(1024)                
+                pwd_antenna = "UHF-RFID-Dev"
+                stringa_versione = "KAT ACQ"     
+                antenna_cmd = "grep 'KAT ACQ' /flash/log/KatAcqFFM.log"
+
+                print("Recupero la versione dell'Antenna...")
                 
-                print("Recupero la versione dell'Antenna tramite Shell interattiva...")
-                
-                channel_antenna.send(f"ssh {user_antenna}@{ip_periferica}\n")
-                time.sleep(20)
-                if isOutputGenerated(channel_antenna)[0]:
-                    channel_antenna.send(pwd_antenna + "\n")
-                    time.sleep(20)
-                    if isOutputGenerated(channel_antenna)[0]:
-                        channel_antenna.send("grep 'KAT ACQ' /flash/log/KatAcqFFM.log\n")
-                        time.sleep(15)
-                        esito, versione_antenna = isOutputGenerated(channel_antenna)
-                        m = re.search(r"--\s*(KAT ACQ \d+\.\d+)\s*--", versione_antenna)
-                        versione_antenna = m.group(1)
+                cmd = f"sshpass -p {pwd_antenna} ssh {user_antenna}@{ip_periferica} '{antenna_cmd}' "
+                stdin, stdout, stderr = ssh_client_pista.exec_command(cmd)
+                file_content = stdout.read().decode()
+                lines = file_content.split("\n")
+
+                last_line = None
+                for line in lines:
+                    if stringa_versione in line:
+                        last_line = line 
+                m = re.search(rf"--\s*({stringa_versione} \d+\.\d+)\s*--", last_line)
+                versione_antenna = m.group(1)
                 
                 print(f"Versione Antenna recuperata: {versione_antenna}") 
-                channel_antenna.close()
 
             case "anpr_zona_1" if stato_periferica == "T":
                 print("Sono sulla anprz1")
@@ -271,40 +204,33 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                 print("front end NO SSH")
             
             case "bio" if stato_periferica == "T":                
+                
                 user_bio = "root"
                 pwd_bio = "itsegypt"  
-                channel_bio = ssh_client_pista.invoke_shell()
-                channel_bio.recv(1024)
-
-                print("Recupero la versione di BIO Board e DAC Driver tramite Shell interattiva...")
+                dac_cmd = "/FN0/S30DacDRIVER/dac -v"
+                bio_cmd = "cat /FN0/version.txt"
+                versione_BIO = ''
+                stringhe_versioni_bio = ["BIO_EGYPT v", "BIO v", "SAM_ATECH v"]
                 
-                channel_bio.send(f"ssh {user_bio}@{ip_periferica}\n")
-                time.sleep(5)
-                if isOutputGenerated(channel_bio)[0] :
-                    channel_bio.send(pwd_bio + "\n")
-                    time.sleep(5)
-                    if isOutputGenerated(channel_bio)[0] :
-                        channel_bio.send("/FN0/S30DacDRIVER/dac -v\n")
-                        time.sleep(10)
-                        esito, versione_DAC = isOutputGenerated(channel_bio)
-                        if esito :       
-                            channel_bio.send("vi /FN0/version.txt \n")
-                            time.sleep(10)
-                            esito, file_txt_BIO = isOutputGenerated(channel_bio)
-                            if isOutputGenerated(channel_bio) :
-                                file_txt_BIO = re.sub(r'\x1b\[[0-9;?]*[A-Za-z]', '', file_txt_BIO)
-                                keys = ["FRW BIO for update_BIO_EGYPT v", "BIO v", "SAM_ATECH v"]
-                                versione_BIO = ''
-                                for k in keys:
-                                    match = re.search(rf"{k}\d+\.\d+", file_txt_BIO)
-                                    versione_BIO += match.group() + ", "
+                print("Recupero la versione di BIO Board e DAC Driver...")
+                
+                cmd = f"sshpass -p {pwd_bio} ssh {user_bio}@{ip_periferica} '{dac_cmd}' "
+                stdin, stdout, stderr = ssh_client_pista.exec_command(cmd)
+                file_content = stdout.read().decode()
+                versione_DAC = file_content
 
-                versione_DAC = versione_DAC.split("\r")[0]
-                versione_BIO = versione_BIO.rstrip(",")
+                cmd = f"sshpass -p {pwd_bio} ssh {user_bio}@{ip_periferica} '{bio_cmd}' "
+                stdin, stdout, stderr = ssh_client_pista.exec_command(cmd)
+                file_content = stdout.read().decode()
+                
+                for k in stringhe_versioni_bio:
+                    match = re.search(rf"{k}\d+\.\d+", str)
+                    versione_BIO += match.group() + ", "              
+                versione_BIO = versione_BIO.rstrip(', ')
+
                 print(f"Versione DAC recuperata: {versione_DAC}") 
                 print(f"Versione BIO recuperata: {versione_BIO}")
-                channel_bio.close()
-    
+                            
 def insertInfoIntoExcel(nome_file, dict_all_piste, colonne_Excel) :
     wb = openpyxl.Workbook()
     ws = wb.active
