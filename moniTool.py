@@ -1,33 +1,43 @@
-import dbManager
+import dbManager, excelManager
 import sys, os, time, math, re, time
 from paramiko import AutoAddPolicy, ProxyCommand, SSHClient, Channel
 from datetime import datetime
-import openpyxl
-from openpyxl import load_workbook
-from openpyxl.styles import Alignment, PatternFill, Border, Side, Font
+
 
 
 '''------------------------------------- PROVE -------------------------------------'''
-
-    
-
-
 
 
 
 #sys.exit(1)
 
+class DualLogger:
+    def __init__(self, filename):
+        self.terminal = sys.stdout  
+        self.log = open(filename, "a")  
 
-def checkPingMachine(ip) -> str :  
+    def write(self, message):
+        self.terminal.write(message)  
+        self.log.write(message) 
+
+    def flush(self):
+        pass 
+
+sys.stdout = DualLogger("report_egitto.log")
+
+def checkPingMachine(ip, nome_macchina) -> str :  
     res = os.popen(f"ping {ip}").read()
     if ("Trasmessi = 4") in res and ("Ricevuti = 0") not in res :
         if ("TTL scaduto durante il passaggio.") in res:
-            print(f"Macchina (ip: {ip}) non raggiungibile!\n")
+            print(f"{nome_macchina} (ip: {ip}) non raggiungibile!\n")
             return "F"
-        print(f"Macchina (ip: {ip}) raggiunta!\n")
+        print(f"{nome_macchina} (ip: {ip}) raggiunto!\n")
         return "T"
+    elif ("Destination Host Unreachable") in res :
+        print(f"{nome_macchina} (ip: {ip}) non raggiungibile!\n")
+        return "F"
     else :
-        print(f"Macchina (ip: {ip}) non raggiungibile!\n")
+        print(f"{nome_macchina} (ip: {ip}) non raggiungibile!\n")
         return "F"
 
 def checkPingPeriferiche(dict_periferiche, ssh_client, tipo_pista) -> str :
@@ -76,7 +86,7 @@ def getInfoBySSHSession(controller_pista, dict_pacchetti_controller, dict_perife
         print(f"---> Avvio connessione in ssh ({controller_pista})\n")
         
         print("Recupero versioni controller di Pista e pacchetti relativi...")
-        vrs_ctr, lista_vrs_pacchetti = getVersioneControllerAndPacchetti(controller_pista, dict_pacchetti_controller, user, pwd, ssh_client)
+        vrs_ctr, lista_vrs_pacchetti = getVersioneControllerAndPacchetti(dict_pacchetti_controller, ssh_client)
         print("Versioni controller e pacchetti recuperate con successo!\n")
         
         print("Verifico raggiungibilità delle periferiche di Pista...")
@@ -95,7 +105,7 @@ def getInfoBySSHSession(controller_pista, dict_pacchetti_controller, dict_perife
         #sys.exit(1) # TO DO TOGLIERE
         return vrs_ctr, lista_vrs_pacchetti, lista_stato_periferiche, dict_versioni_periferiche
 
-def getVersioneControllerAndPacchetti (controller_pista, dict_pacchetti_controller, user, pwd, ssh_client: SSHClient) -> str :
+def getVersioneControllerAndPacchetti (dict_pacchetti_controller, ssh_client: SSHClient) -> str :
     
     versioni_pacchetti=[]
     stdin, stdout, stderr = ssh_client.exec_command('cat /etc/ansible/facts.d/customfacts.fact')
@@ -106,7 +116,8 @@ def getVersioneControllerAndPacchetti (controller_pista, dict_pacchetti_controll
     for key in dict_pacchetti_controller :
         stdin, stdout, stderr = ssh_client.exec_command(f'rpm -qa | grep {key}')
         vrs_pac = stdout.read().decode().strip()
-        vrs_pac = vrs_pac.replace("\n", ", ")
+        if len(vrs_pac.splitlines()) > 1 :
+            vrs_pac = vrs_pac.replace("\n", ", ")+" -> (WARNING)"
         versioni_pacchetti.append(vrs_pac)
 
         print(f"---> Versione pacchetto {key} recuperata: {vrs_pac}") 
@@ -123,6 +134,7 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                                 "v_bio": ['', '']}
     
     unreachable_vrs = "Unreachable"
+    not_expected_vrs = "Not Expected"
 
     for i, key in enumerate(dict_periferiche) :
         stato_periferica = lista_stato_periferiche[i]
@@ -134,6 +146,11 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                 if stato_periferica == "F" :
                     print(f"---Versione Barriera Ottica : {unreachable_vrs}")
                     dict_versioni_periferiche["v_barriera_ottica"] = unreachable_vrs
+                
+                elif stato_periferica == "N" :
+                    print(f"---Versione Barriera Ottica : {not_expected_vrs}")
+                    dict_versioni_periferiche["v_barriera_ottica"] = not_expected_vrs
+                
                 else :
                     user_barriera = "root"
                     pwd_barriera = "controlcard"
@@ -144,15 +161,24 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                     stdin, stdout, stderr = ssh_client_pista.exec_command(cmd)
                     file_content = stdout.read().decode()
                     versione_barriera = file_content.split(f"{stringa_versione}")[1].split("\n")[0]
-                
-                    print(f"---> Versione Barriera Ottica recuperata: {versione_barriera}")
-                    dict_versioni_periferiche["v_barriera_ottica"] = versione_barriera
+                    
+                    if versione_barriera == None :
+                        print(f"---> Errore riscontrato durante il recupero della versione della Barriera Ottica, lo traccio nel file Excel...") 
+                        dict_versioni_periferiche["v_barriera_ottica"] = "Errore"
+                    else :
+                        print(f"---> Versione Barriera Ottica recuperata: {versione_barriera}")
+                        dict_versioni_periferiche["v_barriera_ottica"] = versione_barriera
                 
             case "antenna" :
                 
                 if stato_periferica == "F" :
                     print(f"---> Versione Antenna : {unreachable_vrs}")
                     dict_versioni_periferiche["v_antenna"] = unreachable_vrs
+                
+                elif stato_periferica == "N" :
+                    print(f"---> Versione Antenna : {not_expected_vrs}")
+                    dict_versioni_periferiche["v_antenna"] = not_expected_vrs
+
                 else :
                     user_antenna = "root"
                     pwd_antenna = "UHF-RFID-Dev"
@@ -167,14 +193,19 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                     last_line = None
                     for line in lines:
                         if stringa_versione in line:
-                            last_line = line 
-                    m = re.search(rf"--\s*({stringa_versione} \d+\.\d+)\s*--", last_line)
-                    versione_antenna = m.group(1)
-                    
-                    print(f"---> Versione Antenna recuperata: {versione_antenna}") 
-                    dict_versioni_periferiche["v_antenna"] = versione_antenna
+                            last_line = line
+                            
+                    if last_line == None :
+                        print(f"---> Errore riscontrato durante il recupero della versione dell'Antenna, lo traccio nel file Excel...") 
+                        dict_versioni_periferiche["v_antenna"] = "Errore"
+                    else :
+                        m = re.search(rf"--\s*({stringa_versione} \d+\.\d+)\s*--", last_line)
+                        versione_antenna = m.group(1)
+                        
+                        print(f"---> Versione Antenna recuperata: {versione_antenna}") 
+                        dict_versioni_periferiche["v_antenna"] = versione_antenna
 
-            case "anpr_zona_1" if stato_periferica == "T":
+            case "anpr_zona_1" :
                 
                 user_anpr_zona_1 = ""
                 pwd_anpr_zona_1 = ""
@@ -183,6 +214,11 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                 if stato_periferica == "F" :
                     print(f"---> Versione anpr_zona_1 : {unreachable_vrs}")
                     dict_versioni_periferiche["v_anpr_zona_1"] = unreachable_vrs
+                
+                elif stato_periferica == "N" :
+                    print(f"---> Versione anpr_zona_1 : {not_expected_vrs}")
+                    dict_versioni_periferiche["v_anpr_zona_1"] = not_expected_vrs
+                
                 else :
                     print("---> Versione anpr_zona_1: momentaneamente non disponibile")
                     dict_versioni_periferiche["v_anpr_zona_1"] = "Non disponibile"
@@ -196,6 +232,11 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                 if stato_periferica == "F" :
                     print(f"---> Versione anpr_zona_2 : {unreachable_vrs}")
                     dict_versioni_periferiche["v_anpr_zona_2"] = unreachable_vrs
+                
+                elif stato_periferica == "N" :
+                    print(f"---> Versione anpr_zona_2 : {not_expected_vrs}")
+                    dict_versioni_periferiche["v_anpr_zona_2"] = not_expected_vrs
+                
                 else :
                     print("---> Versione anpr_zona_2: momentaneamente non disponibile")
                     dict_versioni_periferiche["v_anpr_zona_2"] = "Non disponibile"
@@ -209,6 +250,11 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                 if stato_periferica == "F" :
                     print(f"---> Versione anpr_zona_3 : {unreachable_vrs}")
                     dict_versioni_periferiche["v_anpr_zona_3"] = unreachable_vrs
+                
+                elif stato_periferica == "N" :
+                    print(f"---> Versione anpr_zona_3 : {not_expected_vrs}")
+                    dict_versioni_periferiche["v_anpr_zona_3"] = not_expected_vrs
+                
                 else :
                     print("---> Versione anpr_zona_3: momentaneamente non disponibile")
                     dict_versioni_periferiche["v_anpr_zona_3"] = "Non disponibile"
@@ -220,6 +266,12 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                     print(f"---> Versione BIO : {unreachable_vrs}")
                     dict_versioni_periferiche["v_bio"][0] = unreachable_vrs
                     dict_versioni_periferiche["v_bio"][1] = unreachable_vrs
+                
+                elif stato_periferica == "N" :
+                    print(f"---> Versione BIO Board e DAC Driver : {not_expected_vrs}")
+                    dict_versioni_periferiche["v_bio"][0] = not_expected_vrs
+                    dict_versioni_periferiche["v_bio"][1] = not_expected_vrs
+                
                 else :
                     user_bio = "root"
                     pwd_bio = "itsegypt"  
@@ -232,175 +284,43 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                     stdin, stdout, stderr = ssh_client_pista.exec_command(cmd)
                     file_content = stdout.read().decode()
                     versione_DAC = file_content.strip()
+                    if versione_DAC == None :
+                        print(f"---> Errore riscontrato durante il recupero della versione del DAC Driver, lo traccio nel file Excel...") 
+                        dict_versioni_periferiche["v_bio"][0] = "Errore"
+                    else :
+                        cmd = f"sshpass -p {pwd_bio} ssh {user_bio}@{ip_periferica} '{bio_cmd}' "
+                        stdin, stdout, stderr = ssh_client_pista.exec_command(cmd)
+                        file_content = stdout.read().decode()
                     
-                    cmd = f"sshpass -p {pwd_bio} ssh {user_bio}@{ip_periferica} '{bio_cmd}' "
-                    stdin, stdout, stderr = ssh_client_pista.exec_command(cmd)
-                    file_content = stdout.read().decode()
-                    
-                    for k in stringhe_versioni_bio:
-                        match = re.search(rf"{k}\d+\.\d+", file_content)
-                        versione_BIO += match.group() + ", "              
-                    versione_BIO = versione_BIO.rstrip(', ')
+                    if file_content == None :
+                        print(f"---> Errore riscontrato durante il recupero della versione della BIO Board, lo traccio nel file Excel...") 
+                        dict_versioni_periferiche["v_bio"][1] = "Errore"
+                    else :
+                        
+                        for k in stringhe_versioni_bio:
+                            match = re.search(rf"{k}\d+\.\d+", file_content)
+                            versione_BIO += match.group() + ", "              
+                        versione_BIO = versione_BIO.rstrip(', ')
 
-                    print(f"---> Versione DAC recuperata: {versione_DAC}") 
-                    print(f"---> Versione BIO recuperata: {versione_BIO}")
-                    dict_versioni_periferiche["v_bio"][0] = versione_DAC
-                    dict_versioni_periferiche["v_bio"][1] = versione_BIO
+                        print(f"---> Versione DAC recuperata: {versione_DAC}") 
+                        print(f"---> Versione BIO recuperata: {versione_BIO}")
+                        dict_versioni_periferiche["v_bio"][0] = versione_DAC
+                        dict_versioni_periferiche["v_bio"][1] = versione_BIO
     
     return dict_versioni_periferiche
 
-def insertPingResultsIntoExcel(nome_file, dict_all_piste, colonne_Excel_ping) :
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Raggiungibilità_piste_Egitto"    
-    
-    bold_colonne = Font(bold=True)
-
-    bordi = Border(left=Side(border_style="thin", color="000000"), right=Side(border_style="thin", color="000000"), top=Side(border_style="thin", color="000000"), bottom=Side(border_style="thin", color="000000"))
-
-    colore_rosso = PatternFill(start_color="FF6666", end_color="FF6666", fill_type="solid")
-    colore_verde = PatternFill(start_color="66CC66", end_color="66CC66", fill_type="solid")
-    colore_giallo = PatternFill(start_color="FFEE99", end_color="FFEE99", fill_type="solid")
-    colore_neutro = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
-
-    for i_col, nome_colonna in enumerate(colonne_Excel_ping, start=1) :
-        colonna = ws.cell(row=1, column=i_col, value=nome_colonna)
-        col_letter = ws.cell(row=1, column=i_col).column_letter  
-        if nome_colonna == "WIM":
-            nome_fittizio = "NotExpected"
-            ws.column_dimensions[col_letter].width = max(len(nome_fittizio) + 2, 10)
-        else:
-            ws.column_dimensions[col_letter].width = max(len(nome_colonna) + 2, 10)
-
-        colonna.alignment = Alignment(horizontal="center", vertical="center")
-        colonna.border = bordi
-        colonna.font = bold_colonne
-    
-    for i, key in enumerate(dict_all_piste) :
-        exc_codice_pista = str(dict_all_piste[key]["codice_pista"])
-        exc_tipo_pista = str(dict_all_piste[key]["tipo_pista"])
-        exc_controller_pista = str(dict_all_piste[key]["controller_pista"][0]["stato"])
-        exc_barriera_ottica = str(dict_all_piste[key]["controller_pista"][1]["barriera_ottica"]["stato"])
-        exc_antenna = str(dict_all_piste[key]["controller_pista"][1]["antenna"]["stato"])
-        exc_anpr_zona_1 = str(dict_all_piste[key]["controller_pista"][1]["anpr_zona_1"]["stato"])
-        exc_anpr_zona_2 = str(dict_all_piste[key]["controller_pista"][1]["anpr_zona_2"]["stato"])
-        exc_anpr_zona_3 = str(dict_all_piste[key]["controller_pista"][1]["anpr_zona_3"]["stato"])
-        exc_bio = str(dict_all_piste[key]["controller_pista"][1]["bio"]["stato"])
-        exc_stampante = str(dict_all_piste[key]["controller_pista"][1]["stampante"]["stato"])
-        exc_fare_display = str(dict_all_piste[key]["controller_pista"][1]["fare_display"]["stato"])
-        exc_WIM = str(dict_all_piste[key]["controller_pista"][1]["WIM"]["stato"])
-        exc_external = str(dict_all_piste[key]["axis_external"]['stato'])
-        exc_internal = str(dict_all_piste[key]["axis_internal"]['stato'])
-
-        dati_pista = (exc_codice_pista, exc_tipo_pista, exc_controller_pista, 
-                        exc_barriera_ottica, exc_antenna, exc_anpr_zona_1, exc_anpr_zona_2, exc_anpr_zona_3,exc_bio, exc_stampante, exc_fare_display, exc_WIM, 
-                        exc_external, exc_internal)
-
-        for col_i, element in enumerate(dati_pista, start=1):  
-            colore = colore_neutro
-            match element :
-                case "T":
-                    element = "Yes"
-                    colore = colore_verde
-                case "F":
-                    element = "No"
-                    colore = colore_rosso
-                case "N":
-                    element = "Not Expected"
-                    colore = colore_giallo
-
-            row = ws.cell(row=i+2, column=col_i, value=element)
-            row.alignment = Alignment(horizontal="center", vertical="center")
-            row.fill = colore
-            row.border = bordi
-    
-    for i in range(1, ws.max_row + 1):
-        ws.row_dimensions[i].height = 19
-
-    wb.save(nome_file)
-    
-def insertVersionResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel_versioni) :
-    wb = load_workbook(nome_file_Excel)
-    ws2 = wb.create_sheet("Versioni_Software")
-
-
-    bold_colonne = Font(bold=True)
-    bordi = Border(left=Side(border_style="thin", color="000000"), right=Side(border_style="thin", color="000000"), top=Side(border_style="thin", color="000000"), bottom=Side(border_style="thin", color="000000"))
-
-    colore_rosso = PatternFill(start_color="FF6666", end_color="FF6666", fill_type="solid")
-    colore_giallo = PatternFill(start_color="FFEE99", end_color="FFEE99", fill_type="solid")
-    colore_verde = PatternFill(start_color="66CC66", end_color="90EE90", fill_type="solid")
-
-    for i_col, nome_colonna in enumerate(colonne_Excel_versioni, start=1) :
-        colonna = ws2.cell(row=1, column=i_col, value=nome_colonna)
-        col_letter = ws2.cell(row=1, column=i_col).column_letter  
-        colonna.alignment = Alignment(horizontal="center", vertical="center")
-        colonna.border = bordi
-        colonna.font = bold_colonne
-    
-    for i, key in enumerate(dict_all_piste) :
+def getVersioniAxis(ip_axis, user, pwd) -> str:
         
-        exc_codice_pista = str(dict_all_piste[key]["codice_pista"])
-        vrs_controller_pista = str(dict_all_piste[key]["controller_pista"][0]["versione"])
-        
-        vrs_pacc_movyonEgypt = str(dict_all_piste[key]["controller_pista"][0]["versione_pacchetti"]["movyonEgypt-"])
-        vrs_pacc_movyonEgyptConf = str(dict_all_piste[key]["controller_pista"][0]["versione_pacchetti"]["movyonEgyptConf"])
-        vrs_pacc_arcd_application_base = str(dict_all_piste[key]["controller_pista"][0]["versione_pacchetti"]["arcd_application_base"])
-        vrs_pacc_arcdLibs = str(dict_all_piste[key]["controller_pista"][0]["versione_pacchetti"]["arcdLibs"])
-        vrs_pacc_arcd = str(dict_all_piste[key]["controller_pista"][0]["versione_pacchetti"]["arcd-"])
-        vrs_pacc_arcd_application_core = str(dict_all_piste[key]["controller_pista"][0]["versione_pacchetti"]["arcd_application_core-"])
-        
-        vrs_barriera_ottica = str(dict_all_piste[key]["controller_pista"][1]["barriera_ottica"]["versione"])
-        vrs_antenna = str(dict_all_piste[key]["controller_pista"][1]["antenna"]["versione"])
-        vrs_anpr_zona_1 = str(dict_all_piste[key]["controller_pista"][1]["anpr_zona_1"]["versione"])
-        vrs_anpr_zona_2 = str(dict_all_piste[key]["controller_pista"][1]["anpr_zona_2"]["versione"])
-        vrs_anpr_zona_3 = str(dict_all_piste[key]["controller_pista"][1]["anpr_zona_3"]["versione"])
-        vrs_bio = str(dict_all_piste[key]["controller_pista"][1]["bio"]["versioneBIO"])
-        vrs_dac = str(dict_all_piste[key]["controller_pista"][1]["bio"]["versioneDAC"])
-          
-        vrs_external = str(dict_all_piste[key]["axis_external"]['versione'])
-        vrs_internal = str(dict_all_piste[key]["axis_internal"]['versione'])
-    
-        versioni_software_pista = (exc_codice_pista, vrs_controller_pista, 
-                                vrs_pacc_movyonEgypt, vrs_pacc_movyonEgyptConf, vrs_pacc_arcd_application_base, vrs_pacc_arcdLibs, vrs_pacc_arcd, vrs_pacc_arcd_application_core,
-                                vrs_barriera_ottica, vrs_antenna, vrs_anpr_zona_1, vrs_anpr_zona_2, vrs_anpr_zona_3, vrs_bio, vrs_dac, vrs_external, vrs_internal)
-    
-        for col_i, element in enumerate(versioni_software_pista, start=1):  
-                colore = colore_verde
-                match element :
-                    case "Non disponibile":
-                        colore = colore_giallo
-                    case "Unreachable":
-                        colore = colore_rosso
-
-                row = ws2.cell(row=i+2, column=col_i, value=element)
-                row.alignment = Alignment(horizontal="center", vertical="center")
-            
-                if col_i != 1:
-                    row.fill = colore
-                row.border = bordi
-    
-        for col in ws2.columns:
-            max_length = 0
-            col_letter = col[0].column_letter 
-            for cell in col:
-                if cell.value:
-                    max_length = max(max_length, len(str(cell.value)))  
-            ws2.column_dimensions[col_letter].width = max_length + 2 
-  
-        for i in range(1, ws2.max_row + 1):
-            ws2.row_dimensions[i].height = 19
-
-    wb.save(nome_file_Excel)
-
+        print("---> Versione Axis External: momentaneamente non disponibile\n")
+        return "Non disponibile"
 
 user="root"
 pwd="Movyon.2022!"
-controller_pista = '10.1.65.4'
 inizio_esecuzione = datetime.now().replace(microsecond=0)
 
 piste = dbManager.select_data_from_tjmd06_lne(dbManager.connessione_db_gsegy06())
-#piste = (('1', 'K', '10.1.65.4', '10.1.123.132', '10.1.64.164'), ('2', 'I ', '10.1.65.8', '10.1.64.133', '10.1.123.165'))
+#piste = (('1', 'K', '10.1.45.4', '10.1.123.132', '10.1.64.164'), ('2', 'I ', '10.1.65.8', '10.1.64.133', '10.1.123.165'))
+#piste = (('8', 'I', '10.1.65.32', '10.1.64.139', '10.1.64.171'), ('2', 'I ', '10.2.62.8', '10.1.64.133', '10.1.123.165'))
 
 
 dict_barriera_ottica = {"ip" : '172.16.0.10', "stato" : '', "versione" : ''}
@@ -465,27 +385,52 @@ for j in range(0, len(piste)) :
 
     codice_pista = int(piste[j][0])
     tipo_pista = piste[j][1]
-    print(f"\n------------------------ Inizio l'analisi della Pista_{codice_pista} ({j+1} di {len(piste)})------------------------\n")
+    unreachable_vrs = "Unreachable"
+    not_expected_vrs = "Not Expected"
+    
+    print(f"\n------------------------------ Inizio l'analisi della Pista_{codice_pista} ({j+1} di {len(piste)}) ------------------------------\n")
 
     for i, key in enumerate(dict_pista) :
 
-        info_pista = piste[j][i] 
+        info_pista = piste[j][i]
+        
+
         if key in ("axis_external", "axis_internal") :
 
             dict_pista[key]["ip"] = info_pista
-            dict_pista[key]["stato"] = checkPingMachine(info_pista)
-            dict_pista[key]["versione"] = "Non disponibile" # per il momento...
-
+            stato_axis = checkPingMachine(info_pista, key)
+            dict_pista[key]["stato"] = stato_axis
+            
+            if stato_axis == "F" :
+                dict_pista[key]["versione"] = unreachable_vrs
+            elif stato_axis == "N" :
+                dict_pista[key]["versione"] = not_expected_vrs
+            else :
+                dict_pista[key]["versione"] = getVersioniAxis(info_pista, user, pwd)
+            
         elif key == "controller_pista" :
             
             controller_pista = info_pista
             dict_pista[key][0]["ip"] = info_pista
-            dict_pista[key][0]["stato"] = checkPingMachine(info_pista)
+            dict_pista[key][0]["stato"] = checkPingMachine(info_pista, key)
             
             if dict_pista[key][0]["stato"] == "F" :
-                print("Controller di Pista non raggiungibile, considero non raggiungibili le periferiche relative")
+                
+                print("Controller di Pista non raggiungibile, considero 'Unreachable' periferiche e versioni relative...\n")
+                
                 lista_stato_periferiche = 'FFFFFFFFF'
-                # TO DO chiamare la funzione per settare ad 'Unreachable' tutte le periferiche
+                dict_pista[key][0]["versione"] = unreachable_vrs
+
+                for i, key_pacchetto in enumerate(dict_pacchetti_controller) :
+                    dict_pista[key][0]["versione_pacchetti"][key_pacchetto] = unreachable_vrs
+
+                for x, key in enumerate(dict_periferiche) :
+                    dict_periferiche[key]["stato"] = lista_stato_periferiche[x]
+                    if key == "bio" :
+                        dict_periferiche[key]["versioneBIO"] = unreachable_vrs
+                        dict_periferiche[key]["versioneDAC"] = unreachable_vrs
+                    else :
+                        dict_periferiche[key]["versione"] = unreachable_vrs
                                 
             else :
                 versione_controller, lista_versione_pacchetti, lista_stato_periferiche, dict_versione_periferiche = getInfoBySSHSession(controller_pista, 
@@ -534,19 +479,21 @@ colonne_Excel_versioni = ('Codice Pista', 'Controller',
                           'Bio Board', 'DAC Driver', 'Telecamera CCTV esterna', 'Telecamera CCTV interna')
 
 
-insertPingResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel_ping)
-insertVersionResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel_versioni)
+
+excelManager.insertPingResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel_ping)
+
+excelManager.insertVersionResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel_versioni)
 
 print(f"\nFile '{nome_file_Excel}' generato con successo!")
-print("File salvato in:", os.path.abspath(nome_file_Excel))
+print("File salvato in:", os.path.abspath(nome_file_Excel) +"\n")
 
 
 fine_esecuzione = datetime.now().replace(microsecond=0)
-print(f"Fine esecuzione: {fine_esecuzione}")
+print(f"Fine esecuzione: {fine_esecuzione}\n")
 delta = fine_esecuzione - inizio_esecuzione
 delta_min = delta.total_seconds()/60
 delta_min = math.trunc(delta_min * 100)/100
 
-print(f"Tempo di esecuzione totale: {delta_min} minuti")
+print(f"Tempo di esecuzione totale: {delta_min} minuti\n")
 
 
