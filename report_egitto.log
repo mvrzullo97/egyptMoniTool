@@ -1,0 +1,106 @@
+
+Connessione al DB avvenuta con successo!
+Ho trovato 2 record nella tabella TJMD06_LNE, li estraggo...
+
+Inizio esecuzione: 2025-02-18 14:10:20
+
+------------------------------ Inizio l'analisi della Pista_1 (1 di 2) ------------------------------
+
+controller_pista (ip: 10.1.65.4) raggiunta!
+
+---> Avvio connessione in ssh (10.1.65.4)
+
+Recupero versioni controller di Pista e pacchetti relativi...
+---> Versione pacchetto movyonEgypt- recuperata: movyonEgypt-5.6.0-1.x86_64
+---> Versione pacchetto movyonEgyptConf recuperata: movyonEgyptConfManualLane-5.5.4-1.x86_64
+---> Versione pacchetto arcd_application_base recuperata: arcd_application_base-3.8.0-1.x86_64
+---> Versione pacchetto arcdLibs recuperata: arcdLibs-3.3.0-0.x86_64
+---> Versione pacchetto arcd- recuperata: arcd-6.4.2-1.x86_64, arcd-6.4.1-1.x86_64 -> (WARNING)
+---> Versione pacchetto arcd_application_core- recuperata: arcd_application_core-12.2.0-1.x86_64
+Versioni controller e pacchetti recuperate con successo!
+
+Verifico raggiungibilità delle periferiche di Pista...
+---> Periferica barriera_ottica (ip: 172.16.0.10) raggiunta!
+---> Periferica antenna (ip: 172.16.0.30) raggiunta!
+---> Periferica anpr_zona_1 (ip: 172.16.0.21) raggiunta!
+---> Periferica anpr_zona_2 non presa in considerazione per pista di tipo K
+---> Periferica anpr_zona_3 (ip: 172.16.0.22) raggiunta!
+---> Periferica bio (ip: 172.16.0.2) raggiunta!
+---> Periferica stampante (ip: 172.16.0.40) raggiunta!
+---> Periferica fare_display (ip: 172.16.0.60) raggiunta!
+---> Periferica WIM (ip: 172.16.0.70) raggiunta!
+Verifica raggiungibilità periferiche terminata!
+
+Recupero versioni SW delle periferiche di Pista...
+---> Versione Barriera Ottica recuperata: 1.4.0
+---> Versione Antenna recuperata: KAT ACQ 1.16
+---> Versione anpr_zona_1: momentaneamente non disponibile
+---> Versione anpr_zona_2 : Not Expected
+---> Versione anpr_zona_3: momentaneamente non disponibile
+---> Versione DAC recuperata: 1.7.0
+---> Versione BIO recuperata: BIO_EGYPT v1.01, BIO v02.02, SAM_ATECH v05.19
+Versioni SW recuperate con successo!
+
+---> Chiudo connessione in ssh (10.1.65.4)
+
+axis_external (ip: 10.1.64.132) raggiunta!
+
+---> Versione Axis External: momentaneamente non disponibile
+
+axis_internal (ip: 10.1.64.164) raggiunta!
+
+---> Versione Axis External: momentaneamente non disponibile
+
+
+------------------------------ Inizio l'analisi della Pista_2 (2 di 2) ------------------------------
+
+controller_pista (ip: 10.1.65.8) raggiunta!
+
+---> Avvio connessione in ssh (10.1.65.8)
+
+Recupero versioni controller di Pista e pacchetti relativi...
+---> Versione pacchetto movyonEgypt- recuperata: movyonEgypt-5.6.0-1.x86_64
+---> Versione pacchetto movyonEgyptConf recuperata: movyonEgyptConfManualLane-5.5.4-1.x86_64
+---> Versione pacchetto arcd_application_base recuperata: arcd_application_base-3.8.0-1.x86_64
+---> Versione pacchetto arcdLibs recuperata: arcdLibs-3.3.0-0.x86_64
+---> Versione pacchetto arcd- recuperata: arcd-6.4.2-1.x86_64, arcd-6.4.1-1.x86_64 -> (WARNING)
+---> Versione pacchetto arcd_application_core- recuperata: arcd_application_core-12.2.0-1.x86_64
+Versioni controller e pacchetti recuperate con successo!
+
+Verifico raggiungibilità delle periferiche di Pista...
+---> Periferica barriera_ottica (ip: 172.16.0.10) raggiunta!
+---> Periferica antenna (ip: 172.16.0.30) raggiunta!
+---> Periferica anpr_zona_1 (ip: 172.16.0.21) raggiunta!
+---> Periferica anpr_zona_2 non presa in considerazione per pista di tipo J
+---> Periferica anpr_zona_3 (ip: 172.16.0.22) raggiunta!
+---> Periferica bio (ip: 172.16.0.2) raggiunta!
+---> Periferica stampante (ip: 172.16.0.40) raggiunta!
+---> Periferica fare_display (ip: 172.16.0.60) raggiunta!
+---> Periferica WIM non presa in considerazione per pista di tipo J
+Verifica raggiungibilità periferiche terminata!
+
+Recupero versioni SW delle periferiche di Pista...
+---> Versione Barriera Ottica recuperata: 1.4.0
+---> Versione Antenna recuperata: KAT ACQ 1.16
+---> Versione anpr_zona_1: momentaneamente non disponibile
+---> Versione anpr_zona_2 : Not Expected
+---> Versione anpr_zona_3: momentaneamente non disponibile
+---> Versione DAC recuperata: 1.7.0
+---> Versione BIO recuperata: BIO_EGYPT v1.01, BIO v02.02, SAM_ATECH v05.19
+Versioni SW recuperate con successo!
+
+---> Chiudo connessione in ssh (10.1.65.8)
+
+axis_external (ip: 10.1.64.133) raggiunta!
+
+---> Versione Axis External: momentaneamente non disponibile
+
+axis_internal (ip: 10.1.64.165) raggiunta!
+
+---> Versione Axis External: momentaneamente non disponibile
+
+
+File 'report_piste_Egitto.xlsx' generato con successo!
+File salvato in: C:\Users\marzulloa\OneDrive - TXT e-solutions S.p.A\Desktop\SCRIPTS\pyMoniTool\report_piste_Egitto.xlsx
+Fine esecuzione: 2025-02-18 14:13:18
+Tempo di esecuzione totale: 2.96 minuti
