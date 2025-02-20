@@ -1,0 +1,27 @@
+{
+    "database": {
+        "dbname": "gsegy06",
+        "ip" : "10.1.12.4",
+        "port": 5432,
+        "user": "jread",
+        "pwd": "jread"
+    },
+
+    "pista": {
+      "stazione": 1
+    },
+
+    "ip_periferiche": {
+        "barriera_ottica": "172.16.0.10",
+        "antenna": "172.16.0.30",
+        "anpr_zona_1": "172.16.0.21",
+        "anpr_zona_2": "172.16.0.22",
+        "anpr_zona_3": "172.16.0.22",
+        "bio": "172.16.0.2",
+        "stampante": "172.16.0.40",
+        "fare_display": "172.16.0.60",
+        "WIM": "172.16.0.70"
+    }
+  }
+  
+

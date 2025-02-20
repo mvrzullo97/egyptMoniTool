@@ -1,5 +1,5 @@
 import dbManager, excelManager
-import sys, os, time, math, re, time
+import sys, os, time, math, re, time, json
 from paramiko import AutoAddPolicy, ProxyCommand, SSHClient, Channel
 from datetime import datetime
 
@@ -7,9 +7,9 @@ from datetime import datetime
 
 '''------------------------------------- PROVE -------------------------------------'''
 
-
-
 #sys.exit(1)
+
+
 
 class DualLogger:
     def __init__(self, filename):
@@ -23,10 +23,17 @@ class DualLogger:
     def flush(self):
         pass 
 
-sys.stdout = DualLogger("report_egitto.log")
-
 def checkPingMachine(ip, nome_macchina) -> str :  
+    
     res = os.popen(f"ping {ip}").read()
+    match nome_macchina:
+        case "controller_pista" :
+            nome_macchina = "Controller di Pista"
+        case "axis_external" :
+            nome_macchina = "Axis External"
+        case "axis_internal" :
+            nome_macchina = "Axis Internal"
+
     if ("Trasmessi = 4") in res and ("Ricevuti = 0") not in res :
         if ("TTL scaduto durante il passaggio.") in res:
             print(f"{nome_macchina} (ip: {ip}) non raggiungibile!\n")
@@ -93,16 +100,15 @@ def getInfoBySSHSession(controller_pista, dict_pacchetti_controller, dict_perife
         lista_stato_periferiche = checkPingPeriferiche(dict_periferiche, ssh_client, tipo_pista)
         print("Verifica raggiungibilità periferiche terminata!\n")
 
-        print("Recupero versioni SW delle periferiche di Pista...")
+        print("Recupero versioni Software delle periferiche di Pista...")
         dict_versioni_periferiche = getVersioniPeriferiche(ssh_client, dict_periferiche, lista_stato_periferiche)
-        print("Versioni SW recuperate con successo!\n")
+        print("Versioni Software recuperate con successo!\n")
 
     finally : 
         
         print(f"---> Chiudo connessione in ssh ({controller_pista})\n")
         
         ssh_client.close()
-        #sys.exit(1) # TO DO TOGLIERE
         return vrs_ctr, lista_vrs_pacchetti, lista_stato_periferiche, dict_versioni_periferiche
 
 def getVersioneControllerAndPacchetti (dict_pacchetti_controller, ssh_client: SSHClient) -> str :
@@ -162,7 +168,7 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                     file_content = stdout.read().decode()
                     versione_barriera = file_content.split(f"{stringa_versione}")[1].split("\n")[0]
                     
-                    if versione_barriera == None :
+                    if versione_barriera == None or file_content == "":
                         print(f"---> Errore riscontrato durante il recupero della versione della Barriera Ottica, lo traccio nel file Excel...") 
                         dict_versioni_periferiche["v_barriera_ottica"] = "Errore"
                     else :
@@ -195,7 +201,7 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                         if stringa_versione in line:
                             last_line = line
                             
-                    if last_line == None :
+                    if last_line == None or last_line == "":
                         print(f"---> Errore riscontrato durante il recupero della versione dell'Antenna, lo traccio nel file Excel...") 
                         dict_versioni_periferiche["v_antenna"] = "Errore"
                     else :
@@ -277,61 +283,108 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                     pwd_bio = "itsegypt"  
                     dac_cmd = "/FN0/S30DacDRIVER/dac -v"
                     bio_cmd = "cat /FN0/version.txt"
-                    versione_BIO = ''
                     stringhe_versioni_bio = ["BIO_EGYPT v", "BIO v", "SAM_ATECH v"]
+                    versione_BIO = ""
                                         
                     cmd = f"sshpass -p {pwd_bio} ssh {user_bio}@{ip_periferica} '{dac_cmd}' "
                     stdin, stdout, stderr = ssh_client_pista.exec_command(cmd)
                     file_content = stdout.read().decode()
                     versione_DAC = file_content.strip()
-                    if versione_DAC == None :
-                        print(f"---> Errore riscontrato durante il recupero della versione del DAC Driver, lo traccio nel file Excel...") 
-                        dict_versioni_periferiche["v_bio"][0] = "Errore"
-                    else :
-                        cmd = f"sshpass -p {pwd_bio} ssh {user_bio}@{ip_periferica} '{bio_cmd}' "
-                        stdin, stdout, stderr = ssh_client_pista.exec_command(cmd)
-                        file_content = stdout.read().decode()
                     
-                    if file_content == None :
-                        print(f"---> Errore riscontrato durante il recupero della versione della BIO Board, lo traccio nel file Excel...") 
-                        dict_versioni_periferiche["v_bio"][1] = "Errore"
+                    if versione_DAC == None or versione_DAC == "":
+                        print(f"---> Errore riscontrato durante il recupero della versione del DAC Driver, lo traccio nel file Excel...") 
+                        versione_DAC = "Errore"
                     else :
+                        print(f"---> Versione DAC recuperata: {versione_DAC}")
+
+                    dict_versioni_periferiche["v_bio"][0] = versione_DAC
+
+                    cmd = f"sshpass -p {pwd_bio} ssh {user_bio}@{ip_periferica} '{bio_cmd}' "
+                    stdin, stdout, stderr = ssh_client_pista.exec_command(cmd)
+                    file_content = stdout.read().decode()
+                    
+                    if file_content == None or file_content == "" :
+                        print(f"---> Errore riscontrato durante il recupero della versione della BIO Board, lo traccio nel file Excel...") 
+                        versione_BIO = "Errore"
                         
+                    else :
                         for k in stringhe_versioni_bio:
                             match = re.search(rf"{k}\d+\.\d+", file_content)
                             versione_BIO += match.group() + ", "              
                         versione_BIO = versione_BIO.rstrip(', ')
-
-                        print(f"---> Versione DAC recuperata: {versione_DAC}") 
                         print(f"---> Versione BIO recuperata: {versione_BIO}")
-                        dict_versioni_periferiche["v_bio"][0] = versione_DAC
-                        dict_versioni_periferiche["v_bio"][1] = versione_BIO
+                     
+                    dict_versioni_periferiche["v_bio"][1] = versione_BIO
     
     return dict_versioni_periferiche
 
 def getVersioniAxis(ip_axis, user, pwd) -> str:
         
-        print("---> Versione Axis External: momentaneamente non disponibile\n")
         return "Non disponibile"
+
+
+
+json_filename = "config.json"
+
+try:
+    print(f"\nFile di configurazione {json_filename} trovato, estraggo i parametri...")
+
+    with open(json_filename, 'r') as f:
+        config = json.load(f)
+    try :
+        db_name = config['database']['dbname']
+        db_ip = config['database']['ip']
+        db_port = config['database']['port']
+        db_user = config['database']['user']
+        db_pwd = config['database']['pwd']
+
+        stazione = config['pista']['stazione']
+
+        ip_barriera_ottica = config['ip_periferiche']['barriera_ottica']
+        ip_antenna = config['ip_periferiche']['antenna']
+        ip_anpr_zona_1 = config['ip_periferiche']['anpr_zona_1']
+        ip_anpr_zona_2 = config['ip_periferiche']['anpr_zona_2']
+        ip_anpr_zona_3 = config['ip_periferiche']['anpr_zona_3']
+        ip_bio = config['ip_periferiche']['bio']
+        ip_stampante = config['ip_periferiche']['stampante']
+        ip_fare_display = config['ip_periferiche']['fare_display']
+        ip_WIM = config['ip_periferiche']['WIM']
+    
+    except KeyError as e:
+        print(f"Errore: La chiave '{e.args[0]}' non è presente nel file di configurazione!\n")
+        sys.exit(1)
+
+except FileNotFoundError:
+        print(f"Errore: Il file {json_filename} non esiste!\n")
+        sys.exit(1)
+except json.JSONDecodeError:
+        print(f"Errore: Il file {json_filename} non è un JSON valido!\n")
+        sys.exit(1)
+
 
 user="root"
 pwd="Movyon.2022!"
 inizio_esecuzione = datetime.now().replace(microsecond=0)
-
-piste = dbManager.select_data_from_tjmd06_lne(dbManager.connessione_db_gsegy06())
-#piste = (('1', 'K', '10.1.45.4', '10.1.123.132', '10.1.64.164'), ('2', 'I ', '10.1.65.8', '10.1.64.133', '10.1.123.165'))
-#piste = (('8', 'I', '10.1.65.32', '10.1.64.139', '10.1.64.171'), ('2', 'I ', '10.2.62.8', '10.1.64.133', '10.1.123.165'))
+sys.stdout = DualLogger("report_egitto.log")
 
 
-dict_barriera_ottica = {"ip" : '172.16.0.10', "stato" : '', "versione" : ''}
-dict_antenna = {"ip" : '172.16.0.30', "stato" : '', "versione" : ''}
-dict_anpr_zona_1 = {"ip" : '172.16.0.21', "stato" : '', "versione" : ''}
-dict_anpr_zona_2 = {"ip" : '172.16.0.22', "stato" : '', "versione" : ''}
-dict_anpr_zona_3 = {"ip" : '172.16.0.22', "stato" : '', "versione" : ''}
-dict_bio = {"ip" : '172.16.0.2', "stato" : '', "versioneBIO" : '', "versioneDAC" : ''}
-dict_stampante = {"ip" : '172.16.0.40', "stato" : ''}
-dict_fare_display = {"ip" : '172.16.0.60', "stato" : ''}
-dict_WIM = {"ip" : '172.16.0.70', "stato" : ''}
+db_connection = dbManager.connessione_db_gsegy06(db_name, db_user, db_pwd, db_ip, db_port)
+
+if db_connection :
+    piste = dbManager.select_data_from_tjmd06_lne(db_connection, stazione)
+
+#piste = (('24', 'I', '10.1.65.96', '10.1.64.155', '10.1.64.187'), ('2', 'I ', '10.1.65.8', '10.1.64.133', '10.1.123.165'))
+
+
+dict_barriera_ottica = {"ip" : ip_barriera_ottica, "stato" : '', "versione" : ''}
+dict_antenna = {"ip" : ip_antenna, "stato" : '', "versione" : ''}
+dict_anpr_zona_1 = {"ip" : ip_anpr_zona_1, "stato" : '', "versione" : ''}
+dict_anpr_zona_2 = {"ip" : ip_anpr_zona_2, "stato" : '', "versione" : ''}
+dict_anpr_zona_3 = {"ip" : ip_anpr_zona_3, "stato" : '', "versione" : ''}
+dict_bio = {"ip" : ip_bio, "stato" : '', "versioneBIO" : '', "versioneDAC" : ''}
+dict_stampante = {"ip" : ip_stampante, "stato" : ''}
+dict_fare_display = {"ip" : ip_fare_display, "stato" : ''}
+dict_WIM = {"ip" : ip_WIM, "stato" : ''}
 
 dict_periferiche = {"barriera_ottica" : dict_barriera_ottica,
                    "antenna" : dict_antenna,
@@ -368,15 +421,15 @@ print(f"\nInizio esecuzione: {inizio_esecuzione}")
 for j in range(0, len(piste)) : 
 
     dict_pacchetti_controller = {"movyonEgypt-" :'', "movyonEgyptConf" :'', "arcd_application_base" :'', "arcdLibs" :'', "arcd-" :'', "arcd_application_core-" :''}
-    dict_barriera_ottica = {"ip" : '172.16.0.10', "stato" : '', "versione" : ''}
-    dict_antenna = {"ip" : '172.16.0.30', "stato" : '', "versione" : ''}
-    dict_anpr_zona_1 = {"ip" : '172.16.0.21', "stato" : '', "versione" : ''}
-    dict_anpr_zona_2 = {"ip" : '172.16.0.22', "stato" : '', "versione" : ''}
-    dict_anpr_zona_3 = {"ip" : '172.16.0.22', "stato" : '', "versione" : ''}
-    dict_bio = {"ip" : '172.16.0.2', "stato" : '', "versioneBIO" : '', "versioneDAC" : ''}
-    dict_stampante = {"ip" : '172.16.0.40', "stato" : ''}
-    dict_fare_display = {"ip" : '172.16.0.60', "stato" : ''}
-    dict_WIM = {"ip" : '172.16.0.70', "stato" : ''}
+    dict_barriera_ottica = {"ip" : ip_barriera_ottica, "stato" : '', "versione" : ''}
+    dict_antenna = {"ip" : ip_antenna, "stato" : '', "versione" : ''}
+    dict_anpr_zona_1 = {"ip" : ip_anpr_zona_1, "stato" : '', "versione" : ''}
+    dict_anpr_zona_2 = {"ip" : ip_anpr_zona_2, "stato" : '', "versione" : ''}
+    dict_anpr_zona_3 = {"ip" : ip_anpr_zona_3, "stato" : '', "versione" : ''}
+    dict_bio = {"ip" : ip_bio, "stato" : '', "versioneBIO" : '', "versioneDAC" : ''}
+    dict_stampante = {"ip" : ip_stampante, "stato" : ''}
+    dict_fare_display = {"ip" : ip_fare_display, "stato" : ''}
+    dict_WIM = {"ip" : ip_WIM, "stato" : ''}
     dict_periferiche = {"barriera_ottica" : dict_barriera_ottica, "antenna" : dict_antenna, "anpr_zona_1" : dict_anpr_zona_1, "anpr_zona_2" : dict_anpr_zona_2, "anpr_zona_3" : dict_anpr_zona_3, "bio" : dict_bio, "stampante" : dict_stampante, "fare_display" : dict_fare_display, "WIM" : dict_WIM}
     dict_controller = {"ip" : '', "stato" : '', "versione" : '', "versione_pacchetti" :dict_pacchetti_controller}
     dict_axis_external = {"ip" : '', "stato" : '', "versione" : ''}
@@ -388,13 +441,12 @@ for j in range(0, len(piste)) :
     unreachable_vrs = "Unreachable"
     not_expected_vrs = "Not Expected"
     
-    print(f"\n------------------------------ Inizio l'analisi della Pista_{codice_pista} ({j+1} di {len(piste)}) ------------------------------\n")
+    print(f"\n------------------------------ Analisi Pista_{codice_pista} ({j+1} di {len(piste)}) ------------------------------\n")
 
     for i, key in enumerate(dict_pista) :
 
         info_pista = piste[j][i]
         
-
         if key in ("axis_external", "axis_internal") :
 
             dict_pista[key]["ip"] = info_pista
@@ -407,6 +459,7 @@ for j in range(0, len(piste)) :
                 dict_pista[key]["versione"] = not_expected_vrs
             else :
                 dict_pista[key]["versione"] = getVersioniAxis(info_pista, user, pwd)
+                print("---> Versione Axis: momentaneamente non disponibile\n")
             
         elif key == "controller_pista" :
             
@@ -463,8 +516,17 @@ for j in range(0, len(piste)) :
     dict_all_piste["Pista_"+ str(codice_pista)] = dict_pista.copy()
 
 
-
 #print(dict_all_piste)
+
+fine_esecuzione = datetime.now().replace(microsecond=0)
+print(f"Fine esecuzione: {fine_esecuzione}\n")
+diff = fine_esecuzione - inizio_esecuzione
+ore = diff.seconds // 3600
+minuti = (diff.seconds % 3600) // 60
+secondi = diff.seconds % 60
+tempo_tot = f"{ore} ore, {minuti} minuti, {secondi} secondi"
+print(f"Tempo di esecuzione totale: {tempo_tot}")
+
 
 nome_file_Excel="report_piste_Egitto.xlsx"
 
@@ -478,22 +540,18 @@ colonne_Excel_versioni = ('Codice Pista', 'Controller',
                           'Telecamera ANPR Zona 1', 'Telecamera ANPR Zona 2', 'Telecamera ANPR Zona 3',
                           'Bio Board', 'DAC Driver', 'Telecamera CCTV esterna', 'Telecamera CCTV interna')
 
+dict_info_Excel = {"Stazione" : stazione,
+                   "IP Database" : db_ip,
+                   "lista_ip_periferiche" : "",
+                   "Inizio Esecuzione" : inizio_esecuzione,
+                   "Fine Esecuzione" : fine_esecuzione,
+                   "Tempo Totale (hh:mm:ss)" : diff}
 
-
+excelManager.insertInfoRun(nome_file_Excel, dict_info_Excel, dict_periferiche)
 excelManager.insertPingResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel_ping)
-
 excelManager.insertVersionResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel_versioni)
 
 print(f"\nFile '{nome_file_Excel}' generato con successo!")
 print("File salvato in:", os.path.abspath(nome_file_Excel) +"\n")
-
-
-fine_esecuzione = datetime.now().replace(microsecond=0)
-print(f"Fine esecuzione: {fine_esecuzione}\n")
-delta = fine_esecuzione - inizio_esecuzione
-delta_min = delta.total_seconds()/60
-delta_min = math.trunc(delta_min * 100)/100
-
-print(f"Tempo di esecuzione totale: {delta_min} minuti\n")
 
 
