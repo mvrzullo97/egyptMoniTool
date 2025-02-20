@@ -2,11 +2,80 @@ import openpyxl
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, PatternFill, Border, Side, Font
 
-def insertPingResultsIntoExcel(nome_file, dict_all_piste, colonne_Excel_ping) :
+
+def insertInfoRun(nome_file, dict_info_Excel, dict_periferiche) :
+
+    lista_ip_periferiche_Excel = []
+
+    for key in dict_periferiche :    
+        if key == "barriera_ottica": nome_completo = "Barriera Ottica" 
+        if key == "antenna": nome_completo = "Antenna RFID"
+        if key == "anpr_zona_1": nome_completo = "Telecamera ANPR Zona 1"
+        if key == "anpr_zona_2": nome_completo = "Telecamera ANPR Zona 2"
+        if key == "anpr_zona_3": nome_completo = "Telecamera ANPR Zona 3"
+        if key == "bio": nome_completo = "BIO Board e DAC Driver"
+        if key == "stampante": nome_completo = "Stampante"
+        if key == "fare_display": nome_completo = "Fare Display"
+        if key == "WIM" : nome_completo = "WIM"          
+        tmp = f'{nome_completo}: {dict_periferiche[key]["ip"]}' 
+        lista_ip_periferiche_Excel.append(tmp)
+    
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Raggiungibilità Piste Egitto"    
+    ws.title = "Parmetri utilizzati"
+    ws.append(["Parametro", "Valore"])
+    bordi = Border(left=Side(style='medium'),
+                     right=Side(style='medium'),
+                     top=Side(style='medium'),
+                     bottom=Side(style='medium'))
+    bold_font = Font(bold=True)
+    centering = Alignment(horizontal="center", vertical="center")
+
+    for cell in ws[1]:
+        cell.font = bold_font
+        cell.border = bordi
+        cell.alignment = centering
+
+    row_i = 2
+    col_widths = [len("Parametro"), len("Valore")]
+
+    dict_info_Excel["lista_ip_periferiche"] = lista_ip_periferiche_Excel
+
+    for k, val in dict_info_Excel.items():
+        if isinstance(val, list):  
+            for elem in val:
+                k_lista, val_lista = elem.split(": ")
+                ws.append([k_lista, val_lista])
+                ws[f"A{row_i}"].border = bordi
+                ws[f"B{row_i}"].border = bordi
+                ws[f"A{row_i}"].alignment = centering
+                ws[f"B{row_i}"].alignment = centering
+                col_widths[0] = max(col_widths[0], len(k_lista))
+                col_widths[1] = max(col_widths[1], len(val_lista))
+                ws.row_dimensions[row_i].height = 25
+                row_i += 1
+        else:
+            ws.append([k, val])
+            ws[f"A{row_i}"].border = bordi
+            ws[f"B{row_i}"].border = bordi
+            ws[f"A{row_i}"].alignment = centering
+            ws[f"B{row_i}"].alignment = centering
+            col_widths[0] = max(col_widths[0], len(k))
+            col_widths[1] = max(col_widths[1], len(str(val)))
+            ws.row_dimensions[row_i].height = 25 
+            row_i += 1
+
+    ws.column_dimensions["A"].width = 30
+    ws.column_dimensions["B"].width = 30
+    ws.row_dimensions[1].height = 25
     
+
+    wb.save(nome_file) 
+
+def insertPingResultsIntoExcel(nome_file, dict_all_piste, colonne_Excel_ping) :
+    
+    wb = load_workbook(nome_file)
+    ws = wb.create_sheet("Raggiungibilità Piste Egitto")
     bold_colonne = Font(bold=True)
 
     bordi = Border(left=Side(border_style="thin", color="000000"), right=Side(border_style="thin", color="000000"), top=Side(border_style="thin", color="000000"), bottom=Side(border_style="thin", color="000000"))
@@ -73,6 +142,7 @@ def insertPingResultsIntoExcel(nome_file, dict_all_piste, colonne_Excel_ping) :
     wb.save(nome_file)
     
 def insertVersionResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel_versioni) :
+
     wb = load_workbook(nome_file_Excel)
     ws2 = wb.create_sheet("Verifica Versioni Software")
 
@@ -134,7 +204,7 @@ def insertVersionResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel
                 
                 if " -> (WARNING)" in element :
                     colore = colore_arancione
-                    #element.replace(" -> (WARNING)", "")
+                    element = element.replace(" -> (WARNING)", "")
                 row = ws2.cell(row=i+2, column=col_i, value=element)
                 row.alignment = Alignment(horizontal="center", vertical="center")
             
@@ -154,3 +224,13 @@ def insertVersionResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel
             ws2.row_dimensions[i].height = 19
 
     wb.save(nome_file_Excel)
+
+
+'''dict_info = {'Stazione': 1, 
+             'IP Database': '10.1.12.4', 
+             'lista_ip_periferiche': '', 
+             'Inizio Esecuzione': "datetime.datetime(2025, 2, 20, 11, 48, 49)", 
+             'Fine Esecuzione': "datetime.datetime(2025, 2, 20, 11, 50, 39)", 
+             'Tempo Totale (hh:mm:ss)': "datetime.timedelta(seconds=110)"}
+
+dict_peri = {'barriera_ottica': {'ip': '172.16.0.10', 'stato': 'T', 'versione': '1.4.0'}, 'antenna': {'ip': '172.16.0.30', 'stato': 'T', 'versione': 'KAT ACQ 1.16'}, 'anpr_zona_1': {'ip': '172.16.0.21', 'stato': 'T', 'versione': 'Non disponibile'}, 'anpr_zona_2': {'ip': '172.16.0.22', 'stato': 'N', 'versione': 'Not Expected'}, 'anpr_zona_3': {'ip': '172.16.0.22', 'stato': 'T', 'versione': 'Non disponibile'}, 'bio': {'ip': '172.16.0.2', 'stato': 'T', 'versioneBIO': 'BIO_EGYPT v1.01, BIO v02.02, SAM_ATECH v05.19', 'versioneDAC': '1.7.0'}, 'stampante': {'ip': '172.16.0.40', 'stato': 'T'}, 'fare_display': {'ip': '172.16.0.60', 'stato': 'T'}, 'WIM': {'ip': '172.16.0.70', 'stato': 'T'}}'''
