@@ -198,6 +198,7 @@ def insertVersionResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel
                     case "Unreachable":
                         colore = colore_rosso
                     case "Errore":
+                        element = "Error"
                         colore = colore_arancione
                     case "Non disponibile":
                         colore = colore_celeste
@@ -234,3 +235,4 @@ def insertVersionResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel
              'Tempo Totale (hh:mm:ss)': "datetime.timedelta(seconds=110)"}
 
 dict_peri = {'barriera_ottica': {'ip': '172.16.0.10', 'stato': 'T', 'versione': '1.4.0'}, 'antenna': {'ip': '172.16.0.30', 'stato': 'T', 'versione': 'KAT ACQ 1.16'}, 'anpr_zona_1': {'ip': '172.16.0.21', 'stato': 'T', 'versione': 'Non disponibile'}, 'anpr_zona_2': {'ip': '172.16.0.22', 'stato': 'N', 'versione': 'Not Expected'}, 'anpr_zona_3': {'ip': '172.16.0.22', 'stato': 'T', 'versione': 'Non disponibile'}, 'bio': {'ip': '172.16.0.2', 'stato': 'T', 'versioneBIO': 'BIO_EGYPT v1.01, BIO v02.02, SAM_ATECH v05.19', 'versioneDAC': '1.7.0'}, 'stampante': {'ip': '172.16.0.40', 'stato': 'T'}, 'fare_display': {'ip': '172.16.0.60', 'stato': 'T'}, 'WIM': {'ip': '172.16.0.70', 'stato': 'T'}}'''
+
