@@ -11,17 +11,27 @@
       "stazione": 1
     },
 
-    "ip_periferiche": {
-        "barriera_ottica": "172.16.0.10",
-        "antenna": "172.16.0.30",
-        "anpr_zona_1": "172.16.0.21",
-        "anpr_zona_2": "172.16.0.22",
-        "anpr_zona_3": "172.16.0.22",
-        "bio": "172.16.0.2",
-        "stampante": "172.16.0.40",
-        "fare_display": "172.16.0.60",
-        "WIM": "172.16.0.70"
+    "info_controller" :  
+        {"user": "root", 
+        "pwd": "Movyon.2022!" 
+    },
+
+    "info_periferiche": {
+        "barriera_ottica": {"ip":"172.16.0.10", "user": "root", "pwd": "controlcard" },
+        "antenna": {"ip":"172.16.0.30", "user": "root", "pwd": "UHF-RFID-Dev" },
+        "anpr_zona_1": {"ip":"172.16.0.21", "user": "superuser", "pwd": "superuser" },
+        "anpr_zona_2": {"ip":"172.16.0.22", "user": "superuser", "pwd": "superuser" },
+        "anpr_zona_3": {"ip":"172.16.0.22", "user": "superuser", "pwd": "superuser" },
+        "bio": {"ip":"172.16.0.2", "user": "root", "pwd": "itsegypt" },
+        "stampante": {"ip":"172.16.0.40"},
+        "fare_display": {"ip":"172.16.0.60"},
+        "WIM": {"ip":"172.16.0.70"}
+    },
+
+    "info_axis" :  
+        {"user": "root", 
+        "pwd": "1TS_S0LUT10N" 
     }
-  }
+}
   
 
