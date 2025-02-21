@@ -1,15 +1,16 @@
+import subprocess
 import dbManager, excelManager
 import sys, os, time, math, re, time, json
 from paramiko import AutoAddPolicy, ProxyCommand, SSHClient, Channel
 from datetime import datetime
-
-
-
+from selenium import webdriver
+from webdriver_manager.firefox import GeckoDriverManager
+from selenium.webdriver.firefox.service import Service
+from selenium.webdriver.firefox.options import Options
+from robot import run
 '''------------------------------------- PROVE -------------------------------------'''
 
 #sys.exit(1)
-
-
 
 class DualLogger:
     def __init__(self, filename):
@@ -80,8 +81,6 @@ def checkPingPeriferiche(dict_periferiche, ssh_client, tipo_pista) -> str :
         
     return lista_stato_periferiche
 
-    print("CIAO")
-
 def getInfoBySSHSession(controller_pista, dict_pacchetti_controller, dict_periferiche, user, pwd, tipo_pista) : 
     ssh_client = SSHClient()
     ssh_client.set_missing_host_key_policy(AutoAddPolicy())
@@ -101,7 +100,7 @@ def getInfoBySSHSession(controller_pista, dict_pacchetti_controller, dict_perife
         print("Verifica raggiungibilità periferiche terminata!\n")
 
         print("Recupero versioni Software delle periferiche di Pista...")
-        dict_versioni_periferiche = getVersioniPeriferiche(ssh_client, dict_periferiche, lista_stato_periferiche)
+        dict_versioni_periferiche = getVersioniPeriferiche(ssh_client, dict_periferiche, lista_stato_periferiche, controller_pista)
         print("Versioni Software recuperate con successo!\n")
 
     finally : 
@@ -130,7 +129,18 @@ def getVersioneControllerAndPacchetti (dict_pacchetti_controller, ssh_client: SS
 
     return vrs_ctr, versioni_pacchetti
 
-def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_stato_periferiche) -> dict : 
+def execRoboTest(url, is_periferica) :
+    robot_filename = "getVersioneFromWeb.robot"
+    robot_folder_path = os.path.join(os.getcwd(), 'TestSuite')
+    robot_file_path = os.path.join(robot_folder_path, robot_filename)  
+    result = subprocess.run(["robot", "--variable", f"URL:{url}", "--variable", f"is_periferica:{is_periferica}", robot_file_path], capture_output=True, text=True)
+    full_text = result.stdout
+    match = re.search(r'THIS IS THE OUTPUT:\s*(.*)', full_text)
+    if match:
+        return match.group(1).strip()
+    return "Errore"
+
+def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_stato_periferiche, controller_pista) -> dict : 
     
     dict_versioni_periferiche = {"v_barriera_ottica" : '', 
                                 "v_antenna" : '', 
@@ -145,6 +155,10 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
     for i, key in enumerate(dict_periferiche) :
         stato_periferica = lista_stato_periferiche[i]
         ip_periferica = dict_periferiche[key]["ip"]
+        
+        if ('user' or 'pwd') in dict_periferiche[key] :
+            user = dict_periferiche[key]["user"]
+            pwd = dict_periferiche[key]["pwd"]
 
         match key:
             case "barriera_ottica" :
@@ -158,12 +172,10 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                     dict_versioni_periferiche["v_barriera_ottica"] = not_expected_vrs
                 
                 else :
-                    user_barriera = "root"
-                    pwd_barriera = "controlcard"
                     stringa_versione = "Mif version is: "
                     barriera_cmd = "/var/mif/mif -v"
                                         
-                    cmd = f"sshpass -p {pwd_barriera} ssh {user_barriera}@{ip_periferica} '{barriera_cmd}' "
+                    cmd = f"sshpass -p {pwd} ssh {user}@{ip_periferica} '{barriera_cmd}' "
                     stdin, stdout, stderr = ssh_client_pista.exec_command(cmd)
                     file_content = stdout.read().decode()
                     versione_barriera = file_content.split(f"{stringa_versione}")[1].split("\n")[0]
@@ -186,12 +198,10 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                     dict_versioni_periferiche["v_antenna"] = not_expected_vrs
 
                 else :
-                    user_antenna = "root"
-                    pwd_antenna = "UHF-RFID-Dev"
                     stringa_versione = "KAT ACQ"     
                     antenna_cmd = "grep 'KAT ACQ' /flash/log/KatAcqFFM.log"
                     
-                    cmd = f"sshpass -p {pwd_antenna} ssh {user_antenna}@{ip_periferica} '{antenna_cmd}' "
+                    cmd = f"sshpass -p {pwd} ssh {user}@{ip_periferica} '{antenna_cmd}' "
                     stdin, stdout, stderr = ssh_client_pista.exec_command(cmd)
                     file_content = stdout.read().decode()
                     lines = file_content.split("\n")
@@ -212,29 +222,31 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                         dict_versioni_periferiche["v_antenna"] = versione_antenna
 
             case "anpr_zona_1" :
-                
-                user_anpr_zona_1 = ""
-                pwd_anpr_zona_1 = ""
                 versione_anp_zona_1 = ""
- 
+                url_anpr_zona_1 = f"http://{user}:{pwd}@{controller_pista}:32180/cgi-bin/CGI_DeviceInfo.cgi"
+
                 if stato_periferica == "F" :
-                    print(f"---> Versione anpr_zona_1 : {unreachable_vrs}")
+                    print(f"---> Versione Telecamera Anpr Zona 1 : {unreachable_vrs}")
                     dict_versioni_periferiche["v_anpr_zona_1"] = unreachable_vrs
                 
                 elif stato_periferica == "N" :
-                    print(f"---> Versione anpr_zona_1 : {not_expected_vrs}")
+                    print(f"---> Versione Telecamera Anpr Zona 1 : {not_expected_vrs}")
                     dict_versioni_periferiche["v_anpr_zona_1"] = not_expected_vrs
                 
                 else :
-                    print("---> Versione anpr_zona_1: momentaneamente non disponibile")
-                    dict_versioni_periferiche["v_anpr_zona_1"] = "Non disponibile"
+                    versione_anp_zona_1 = execRoboTest(url_anpr_zona_1, is_periferica=True)
+                    if versione_anp_zona_1 == "Errore":
+                        print(f"---> Errore riscontrato durante il recupero della Versione Telecamera Anpr Zona 1, lo traccio nel file Excel...")
+                    else:
+                        print(f"---> Versione Telecamera Anpr Zona 1 recuperata: {versione_anp_zona_1}") 
+                    dict_versioni_periferiche["v_anpr_zona_1"] = versione_anp_zona_1
+
+                   
             
             case "anpr_zona_2" :
-                
-                user_anpr_zona_2 = ""
-                pwd_anpr_zona_2 = ""
                 versione_anp_zona_2 = ""
- 
+                url_anpr_zona_2 = f"http://{user}:{pwd}@{controller_pista}:32280/cgi-bin/CGI_DeviceInfo.cgi"
+        
                 if stato_periferica == "F" :
                     print(f"---> Versione anpr_zona_2 : {unreachable_vrs}")
                     dict_versioni_periferiche["v_anpr_zona_2"] = unreachable_vrs
@@ -244,15 +256,18 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                     dict_versioni_periferiche["v_anpr_zona_2"] = not_expected_vrs
                 
                 else :
-                    print("---> Versione anpr_zona_2: momentaneamente non disponibile")
-                    dict_versioni_periferiche["v_anpr_zona_2"] = "Non disponibile"
+                    versione_anp_zona_2 = execRoboTest(url_anpr_zona_2, is_periferica=True)
+                    if versione_anp_zona_2 == "Errore":
+                        print(f"---> Errore riscontrato durante il recupero della Versione Telecamera Anpr Zona 2, lo traccio nel file Excel...")
+                    else:
+                        print(f"---> Versione Telecamera Anpr Zona 2 recuperata: {versione_anp_zona_2}") 
+                    dict_versioni_periferiche["v_anpr_zona_2"] = versione_anp_zona_2
+                    
             
             case "anpr_zona_3" :
-                
-                user_anpr_zona_3 = ""
-                pwd_anpr_zona_3 = ""
                 versione_anp_zona_3 = ""
- 
+                url_anpr_zona_3 = f"http://{user}:{pwd}@{controller_pista}:32280/cgi-bin/CGI_DeviceInfo.cgi"
+
                 if stato_periferica == "F" :
                     print(f"---> Versione anpr_zona_3 : {unreachable_vrs}")
                     dict_versioni_periferiche["v_anpr_zona_3"] = unreachable_vrs
@@ -262,8 +277,12 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                     dict_versioni_periferiche["v_anpr_zona_3"] = not_expected_vrs
                 
                 else :
-                    print("---> Versione anpr_zona_3: momentaneamente non disponibile")
-                    dict_versioni_periferiche["v_anpr_zona_3"] = "Non disponibile"
+                    versione_anp_zona_3 = execRoboTest(url_anpr_zona_3, is_periferica=True)
+                    if versione_anp_zona_3 == "Errore":
+                        print(f"---> Errore riscontrato durante il recupero della Versione Telecamera Anpr Zona 3, lo traccio nel file Excel...")
+                    else:
+                        print(f"---> Versione Telecamera Anpr Zona 3 recuperata: {versione_anp_zona_3}") 
+                    dict_versioni_periferiche["v_anpr_zona_3"] = versione_anp_zona_3
             
             case "bio" :                
                 
@@ -279,14 +298,12 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                     dict_versioni_periferiche["v_bio"][1] = not_expected_vrs
                 
                 else :
-                    user_bio = "root"
-                    pwd_bio = "itsegypt"  
                     dac_cmd = "/FN0/S30DacDRIVER/dac -v"
                     bio_cmd = "cat /FN0/version.txt"
                     stringhe_versioni_bio = ["BIO_EGYPT v", "BIO v", "SAM_ATECH v"]
                     versione_BIO = ""
                                         
-                    cmd = f"sshpass -p {pwd_bio} ssh {user_bio}@{ip_periferica} '{dac_cmd}' "
+                    cmd = f"sshpass -p {pwd} ssh {user}@{ip_periferica} '{dac_cmd}' "
                     stdin, stdout, stderr = ssh_client_pista.exec_command(cmd)
                     file_content = stdout.read().decode()
                     versione_DAC = file_content.strip()
@@ -299,7 +316,7 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
 
                     dict_versioni_periferiche["v_bio"][0] = versione_DAC
 
-                    cmd = f"sshpass -p {pwd_bio} ssh {user_bio}@{ip_periferica} '{bio_cmd}' "
+                    cmd = f"sshpass -p {pwd} ssh {user}@{ip_periferica} '{bio_cmd}' "
                     stdin, stdout, stderr = ssh_client_pista.exec_command(cmd)
                     file_content = stdout.read().decode()
                     
@@ -323,7 +340,6 @@ def getVersioniAxis(ip_axis, user, pwd) -> str:
         return "Non disponibile"
 
 
-
 json_filename = "config.json"
 
 try:
@@ -339,16 +355,40 @@ try:
         db_pwd = config['database']['pwd']
 
         stazione = config['pista']['stazione']
+        
+        user_controller = config['info_controller']['user']
+        pwd_controller = config['info_controller']['pwd']
 
-        ip_barriera_ottica = config['ip_periferiche']['barriera_ottica']
-        ip_antenna = config['ip_periferiche']['antenna']
-        ip_anpr_zona_1 = config['ip_periferiche']['anpr_zona_1']
-        ip_anpr_zona_2 = config['ip_periferiche']['anpr_zona_2']
-        ip_anpr_zona_3 = config['ip_periferiche']['anpr_zona_3']
-        ip_bio = config['ip_periferiche']['bio']
-        ip_stampante = config['ip_periferiche']['stampante']
-        ip_fare_display = config['ip_periferiche']['fare_display']
-        ip_WIM = config['ip_periferiche']['WIM']
+        ip_barriera_ottica = config['info_periferiche']['barriera_ottica']['ip']
+        user_barriera_ottica = config['info_periferiche']['barriera_ottica']['user']
+        pwd_barriera_ottica = config['info_periferiche']['barriera_ottica']['pwd']
+
+        ip_antenna = config['info_periferiche']['antenna']['ip']
+        user_antenna = config['info_periferiche']['antenna']['user']
+        pwd_antenna = config['info_periferiche']['antenna']['pwd']
+
+        ip_anpr_zona_1 = config['info_periferiche']['anpr_zona_1']['ip']
+        user_anpr_zona_1 = config['info_periferiche']['anpr_zona_1']['user']
+        pwd_anpr_zona_1 = config['info_periferiche']['anpr_zona_1']['pwd']
+
+        ip_anpr_zona_2 = config['info_periferiche']['anpr_zona_2']['ip']
+        user_anpr_zona_2 = config['info_periferiche']['anpr_zona_2']['user']
+        pwd_anpr_zona_2 = config['info_periferiche']['anpr_zona_2']['pwd']
+
+        ip_anpr_zona_3 = config['info_periferiche']['anpr_zona_3']['ip']
+        user_anpr_zona_3 = config['info_periferiche']['anpr_zona_3']['user']
+        pwd_anpr_zona_3 = config['info_periferiche']['anpr_zona_3']['pwd']
+
+        ip_bio = config['info_periferiche']['bio']['ip']
+        user_bio = config['info_periferiche']['bio']['user']
+        pwd_bio = config['info_periferiche']['bio']['pwd']
+        
+        ip_stampante = config['info_periferiche']['stampante']['ip']
+        ip_fare_display = config['info_periferiche']['fare_display']['ip']
+        ip_WIM = config['info_periferiche']['WIM']['ip']
+
+        user_axis = config['info_axis']['user']
+        pwd_axis = config['info_axis']['pwd']
     
     except KeyError as e:
         print(f"Errore: La chiave '{e.args[0]}' non è presente nel file di configurazione!\n")
@@ -362,12 +402,9 @@ except json.JSONDecodeError:
         sys.exit(1)
 
 
-user="root"
-pwd="Movyon.2022!"
+
 inizio_esecuzione = datetime.now().replace(microsecond=0)
 sys.stdout = DualLogger("report_egitto.log")
-
-
 db_connection = dbManager.connessione_db_gsegy06(db_name, db_user, db_pwd, db_ip, db_port)
 
 if db_connection :
@@ -376,12 +413,12 @@ if db_connection :
 #piste = (('24', 'I', '10.1.65.96', '10.1.64.155', '10.1.64.187'), ('2', 'I ', '10.1.65.8', '10.1.64.133', '10.1.123.165'))
 
 
-dict_barriera_ottica = {"ip" : ip_barriera_ottica, "stato" : '', "versione" : ''}
-dict_antenna = {"ip" : ip_antenna, "stato" : '', "versione" : ''}
-dict_anpr_zona_1 = {"ip" : ip_anpr_zona_1, "stato" : '', "versione" : ''}
-dict_anpr_zona_2 = {"ip" : ip_anpr_zona_2, "stato" : '', "versione" : ''}
-dict_anpr_zona_3 = {"ip" : ip_anpr_zona_3, "stato" : '', "versione" : ''}
-dict_bio = {"ip" : ip_bio, "stato" : '', "versioneBIO" : '', "versioneDAC" : ''}
+dict_barriera_ottica = {"ip" : ip_barriera_ottica, "stato" : '', "versione" : '', "user" : user_barriera_ottica, "pwd" : pwd_barriera_ottica}
+dict_antenna = {"ip" : ip_antenna, "stato" : '', "versione" : '', "user" : user_antenna, "pwd" : pwd_antenna}
+dict_anpr_zona_1 = {"ip" : ip_anpr_zona_1, "stato" : '', "versione" : '', "user" : user_anpr_zona_1, "pwd" : pwd_anpr_zona_1}
+dict_anpr_zona_2 = {"ip" : ip_anpr_zona_2, "stato" : '', "versione" : '', "user" : user_anpr_zona_2, "pwd" : pwd_anpr_zona_2}
+dict_anpr_zona_3 = {"ip" : ip_anpr_zona_3, "stato" : '', "versione" : '', "user" : user_anpr_zona_3, "pwd" : pwd_anpr_zona_3}
+dict_bio = {"ip" : ip_bio, "stato" : '', "versioneBIO" : '', "versioneDAC" : '', "user" : user_bio, "pwd" : pwd_bio}
 dict_stampante = {"ip" : ip_stampante, "stato" : ''}
 dict_fare_display = {"ip" : ip_fare_display, "stato" : ''}
 dict_WIM = {"ip" : ip_WIM, "stato" : ''}
@@ -421,12 +458,12 @@ print(f"\nInizio esecuzione: {inizio_esecuzione}")
 for j in range(0, len(piste)) : 
 
     dict_pacchetti_controller = {"movyonEgypt-" :'', "movyonEgyptConf" :'', "arcd_application_base" :'', "arcdLibs" :'', "arcd-" :'', "arcd_application_core-" :''}
-    dict_barriera_ottica = {"ip" : ip_barriera_ottica, "stato" : '', "versione" : ''}
-    dict_antenna = {"ip" : ip_antenna, "stato" : '', "versione" : ''}
-    dict_anpr_zona_1 = {"ip" : ip_anpr_zona_1, "stato" : '', "versione" : ''}
-    dict_anpr_zona_2 = {"ip" : ip_anpr_zona_2, "stato" : '', "versione" : ''}
-    dict_anpr_zona_3 = {"ip" : ip_anpr_zona_3, "stato" : '', "versione" : ''}
-    dict_bio = {"ip" : ip_bio, "stato" : '', "versioneBIO" : '', "versioneDAC" : ''}
+    dict_barriera_ottica = {"ip" : ip_barriera_ottica, "stato" : '', "versione" : '', "user" : user_barriera_ottica, "pwd" : pwd_barriera_ottica}
+    dict_antenna = {"ip" : ip_antenna, "stato" : '', "versione" : '', "user" : user_antenna, "pwd" : pwd_antenna}
+    dict_anpr_zona_1 = {"ip" : ip_anpr_zona_1, "stato" : '', "versione" : '', "user" : user_anpr_zona_1, "pwd" : pwd_anpr_zona_1}
+    dict_anpr_zona_2 = {"ip" : ip_anpr_zona_2, "stato" : '', "versione" : '', "user" : user_anpr_zona_2, "pwd" : pwd_anpr_zona_2}
+    dict_anpr_zona_3 = {"ip" : ip_anpr_zona_3, "stato" : '', "versione" : '', "user" : user_anpr_zona_3, "pwd" : pwd_anpr_zona_3}
+    dict_bio = {"ip" : ip_bio, "stato" : '', "versioneBIO" : '', "versioneDAC" : '', "user" : user_bio, "pwd" : pwd_bio}
     dict_stampante = {"ip" : ip_stampante, "stato" : ''}
     dict_fare_display = {"ip" : ip_fare_display, "stato" : ''}
     dict_WIM = {"ip" : ip_WIM, "stato" : ''}
@@ -458,7 +495,7 @@ for j in range(0, len(piste)) :
             elif stato_axis == "N" :
                 dict_pista[key]["versione"] = not_expected_vrs
             else :
-                dict_pista[key]["versione"] = getVersioniAxis(info_pista, user, pwd)
+                dict_pista[key]["versione"] = getVersioniAxis(info_pista, user_axis, pwd_axis)
                 print("---> Versione Axis: momentaneamente non disponibile\n")
             
         elif key == "controller_pista" :
@@ -489,7 +526,7 @@ for j in range(0, len(piste)) :
                 versione_controller, lista_versione_pacchetti, lista_stato_periferiche, dict_versione_periferiche = getInfoBySSHSession(controller_pista, 
                                                                                                         dict_pacchetti_controller, 
                                                                                                         dict_periferiche, 
-                                                                                                        user, pwd, tipo_pista)
+                                                                                                        user_controller, pwd_controller, tipo_pista)
                 dict_pista[key][0]["versione"] = versione_controller.strip()
 
                 for i, key_pacchetto in enumerate(dict_pacchetti_controller) :
@@ -542,6 +579,7 @@ colonne_Excel_versioni = ('Codice Pista', 'Controller',
 
 dict_info_Excel = {"Stazione" : stazione,
                    "IP Database" : db_ip,
+                   "Nome Database" : db_name,
                    "lista_ip_periferiche" : "",
                    "Inizio Esecuzione" : inizio_esecuzione,
                    "Fine Esecuzione" : fine_esecuzione,
