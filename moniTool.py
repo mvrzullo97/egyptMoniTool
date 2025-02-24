@@ -1,13 +1,14 @@
-import subprocess
 import dbManager, excelManager
 import sys, os, time, math, re, time, json
 from paramiko import AutoAddPolicy, ProxyCommand, SSHClient, Channel
 from datetime import datetime
-from selenium import webdriver
 from webdriver_manager.firefox import GeckoDriverManager
 from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.firefox.options import Options
 from robot import run
+import requests
+from requests.auth import HTTPDigestAuth
+
 '''------------------------------------- PROVE -------------------------------------'''
 
 #sys.exit(1)
@@ -39,7 +40,7 @@ def checkPingMachine(ip, nome_macchina) -> str :
         if ("TTL scaduto durante il passaggio.") in res:
             print(f"{nome_macchina} (ip: {ip}) non raggiungibile!\n")
             return "F"
-        print(f"{nome_macchina} (ip: {ip}) raggiunto!\n")
+        print(f"{nome_macchina} (ip: {ip}) raggiunto!")
         return "T"
     elif ("Destination Host Unreachable") in res :
         print(f"{nome_macchina} (ip: {ip}) non raggiungibile!\n")
@@ -89,7 +90,7 @@ def getInfoBySSHSession(controller_pista, dict_pacchetti_controller, dict_perife
     
     try:       
         ssh_client.connect(hostname=controller_pista, username=user, password=pwd, allow_agent=True, look_for_keys=True)
-        print(f"---> Avvio connessione in ssh ({controller_pista})\n")
+        print(f"------> Avvio connessione in ssh ({controller_pista}) <------\n")
         
         print("Recupero versioni controller di Pista e pacchetti relativi...")
         vrs_ctr, lista_vrs_pacchetti = getVersioneControllerAndPacchetti(dict_pacchetti_controller, ssh_client)
@@ -105,7 +106,7 @@ def getInfoBySSHSession(controller_pista, dict_pacchetti_controller, dict_perife
 
     finally : 
         
-        print(f"---> Chiudo connessione in ssh ({controller_pista})\n")
+        print(f"------> Chiudo connessione in ssh ({controller_pista}) <------\n")
         
         ssh_client.close()
         return vrs_ctr, lista_vrs_pacchetti, lista_stato_periferiche, dict_versioni_periferiche
@@ -128,17 +129,6 @@ def getVersioneControllerAndPacchetti (dict_pacchetti_controller, ssh_client: SS
         print(f"---> Versione pacchetto {key} recuperata: {vrs_pac}") 
 
     return vrs_ctr, versioni_pacchetti
-
-def execRoboTest(url, is_periferica) :
-    robot_filename = "getVersioneFromWeb.robot"
-    robot_folder_path = os.path.join(os.getcwd(), 'TestSuite')
-    robot_file_path = os.path.join(robot_folder_path, robot_filename)  
-    result = subprocess.run(["robot", "--variable", f"URL:{url}", "--variable", f"is_periferica:{is_periferica}", robot_file_path], capture_output=True, text=True)
-    full_text = result.stdout
-    match = re.search(r'THIS IS THE OUTPUT:\s*(.*)', full_text)
-    if match:
-        return match.group(1).strip()
-    return "Errore"
 
 def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_stato_periferiche, controller_pista) -> dict : 
     
@@ -234,11 +224,15 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                     dict_versioni_periferiche["v_anpr_zona_1"] = not_expected_vrs
                 
                 else :
-                    versione_anp_zona_1 = execRoboTest(url_anpr_zona_1, is_periferica=True)
-                    if versione_anp_zona_1 == "Errore":
-                        print(f"---> Errore riscontrato durante il recupero della Versione Telecamera Anpr Zona 1, lo traccio nel file Excel...")
-                    else:
+                    response = requests.get(url_anpr_zona_1, verify=False)
+                    match = re.search(r"Firmware version\s*=\s*([^\n]*\s2024)", response.text)
+                    if match:
+                        versione_anp_zona_1 = match.group(1)
                         print(f"---> Versione Telecamera Anpr Zona 1 recuperata: {versione_anp_zona_1}") 
+                    else:
+                        versione_anp_zona_1 = "Errore"
+                        print(f"---> Errore riscontrato durante il recupero della Versione Telecamera Anpr Zona 1, lo traccio nel file Excel...")
+                
                     dict_versioni_periferiche["v_anpr_zona_1"] = versione_anp_zona_1
 
                    
@@ -256,11 +250,15 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                     dict_versioni_periferiche["v_anpr_zona_2"] = not_expected_vrs
                 
                 else :
-                    versione_anp_zona_2 = execRoboTest(url_anpr_zona_2, is_periferica=True)
-                    if versione_anp_zona_2 == "Errore":
-                        print(f"---> Errore riscontrato durante il recupero della Versione Telecamera Anpr Zona 2, lo traccio nel file Excel...")
-                    else:
+                    response = requests.get(url_anpr_zona_2, verify=False)
+                    match = re.search(r"Firmware version\s*=\s*([^\n]*\s2024)", response.text)
+                    if match:
+                        versione_anp_zona_2 = match.group(1)
                         print(f"---> Versione Telecamera Anpr Zona 2 recuperata: {versione_anp_zona_2}") 
+                    else:
+                        versione_anp_zona_1 = "Errore"
+                        print(f"---> Errore riscontrato durante il recupero della Versione Telecamera Anpr Zona 2, lo traccio nel file Excel...")
+                
                     dict_versioni_periferiche["v_anpr_zona_2"] = versione_anp_zona_2
                     
             
@@ -277,11 +275,15 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                     dict_versioni_periferiche["v_anpr_zona_3"] = not_expected_vrs
                 
                 else :
-                    versione_anp_zona_3 = execRoboTest(url_anpr_zona_3, is_periferica=True)
-                    if versione_anp_zona_3 == "Errore":
-                        print(f"---> Errore riscontrato durante il recupero della Versione Telecamera Anpr Zona 3, lo traccio nel file Excel...")
-                    else:
+                    response = requests.get(url_anpr_zona_3, verify=False)
+                    match = re.search(r"Firmware version\s*=\s*([^\n]*\s2024)", response.text)
+                    if match:
+                        versione_anp_zona_3 = match.group(1)
                         print(f"---> Versione Telecamera Anpr Zona 3 recuperata: {versione_anp_zona_3}") 
+                    else:
+                        versione_anp_zona_1 = "Errore"
+                        print(f"---> Errore riscontrato durante il recupero della Versione Telecamera Anpr Zona 3, lo traccio nel file Excel...")
+                
                     dict_versioni_periferiche["v_anpr_zona_3"] = versione_anp_zona_3
             
             case "bio" :                
@@ -335,10 +337,27 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
     
     return dict_versioni_periferiche
 
-def getVersioniAxis(ip_axis, user, pwd) -> str:
-        
-        return "Non disponibile"
-
+def getVersioniAxis(ip_axis, user, pwd, type) -> str:
+    url = f"http://{ip_axis}/axis-cgi/firmwaremanagement.cgi"
+    headers = {
+        "Accept": "*/*",
+        "Content-Type": "application/json"
+        }
+    data = {
+        "apiVersion": "1.2",
+        "method": "status",
+        "params": {}
+    }
+    
+    response = requests.post(url, json=data, headers=headers, auth=HTTPDigestAuth(user, pwd), verify=False)
+    match = re.search(r'"activeFirmwareVersion":\s*"([^"]+)"', response.text)
+    if match:
+        versione_telecamera = match.group(1)
+        print(f"---> Versione Telecamera Axis {type} recuperata: {versione_telecamera}\n")
+    else:
+        versione_telecamera = "Errore"
+        print(f"---> Errore durante il recupero della Versione Telecamera Axis {type}, lo traccio nel file Excel...")
+    return versione_telecamera
 
 json_filename = "config.json"
 
@@ -393,14 +412,13 @@ try:
     except KeyError as e:
         print(f"Errore: La chiave '{e.args[0]}' non è presente nel file di configurazione!\n")
         sys.exit(1)
-
 except FileNotFoundError:
         print(f"Errore: Il file {json_filename} non esiste!\n")
         sys.exit(1)
 except json.JSONDecodeError:
+        
         print(f"Errore: Il file {json_filename} non è un JSON valido!\n")
         sys.exit(1)
-
 
 
 inizio_esecuzione = datetime.now().replace(microsecond=0)
@@ -485,7 +503,8 @@ for j in range(0, len(piste)) :
         info_pista = piste[j][i]
         
         if key in ("axis_external", "axis_internal") :
-
+            
+            type_axis = "External" if key == "axis_external" else "Internal"
             dict_pista[key]["ip"] = info_pista
             stato_axis = checkPingMachine(info_pista, key)
             dict_pista[key]["stato"] = stato_axis
@@ -495,8 +514,7 @@ for j in range(0, len(piste)) :
             elif stato_axis == "N" :
                 dict_pista[key]["versione"] = not_expected_vrs
             else :
-                dict_pista[key]["versione"] = getVersioniAxis(info_pista, user_axis, pwd_axis)
-                print("---> Versione Axis: momentaneamente non disponibile\n")
+                dict_pista[key]["versione"] = getVersioniAxis(info_pista, user_axis, pwd_axis, type_axis)
             
         elif key == "controller_pista" :
             
@@ -542,8 +560,7 @@ for j in range(0, len(piste)) :
                             dict_pista["controller_pista"][1][key]["versioneDAC"] = dict_versione_periferiche["v_bio"][0]
                             dict_pista["controller_pista"][1][key]["versioneBIO"] = dict_versione_periferiche["v_bio"][1]
                         else :     
-                            dict_pista["controller_pista"][1][key]["versione"] = dict_versione_periferiche[f"v_{key}"]
-        
+                            dict_pista["controller_pista"][1][key]["versione"] = dict_versione_periferiche[f"v_{key}"] 
         elif key == "codice_pista" :
             dict_pista[key] = int(info_pista)
 
@@ -551,9 +568,6 @@ for j in range(0, len(piste)) :
             dict_pista[key] = info_pista
     
     dict_all_piste["Pista_"+ str(codice_pista)] = dict_pista.copy()
-
-
-#print(dict_all_piste)
 
 fine_esecuzione = datetime.now().replace(microsecond=0)
 print(f"Fine esecuzione: {fine_esecuzione}\n")
