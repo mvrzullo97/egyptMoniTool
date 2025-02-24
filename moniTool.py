@@ -1,17 +1,9 @@
 import dbManager, excelManager
 import sys, os, time, math, re, time, json
-from paramiko import AutoAddPolicy, ProxyCommand, SSHClient, Channel
+from paramiko import AutoAddPolicy, SSHClient
 from datetime import datetime
-from webdriver_manager.firefox import GeckoDriverManager
-from selenium.webdriver.firefox.service import Service
-from selenium.webdriver.firefox.options import Options
-from robot import run
 import requests
 from requests.auth import HTTPDigestAuth
-
-'''------------------------------------- PROVE -------------------------------------'''
-
-#sys.exit(1)
 
 class DualLogger:
     def __init__(self, filename):
@@ -427,9 +419,6 @@ db_connection = dbManager.connessione_db_gsegy06(db_name, db_user, db_pwd, db_ip
 
 if db_connection :
     piste = dbManager.select_data_from_tjmd06_lne(db_connection, stazione)
-
-#piste = (('24', 'I', '10.1.65.96', '10.1.64.155', '10.1.64.187'), ('2', 'I ', '10.1.65.8', '10.1.64.133', '10.1.123.165'))
-
 
 dict_barriera_ottica = {"ip" : ip_barriera_ottica, "stato" : '', "versione" : '', "user" : user_barriera_ottica, "pwd" : pwd_barriera_ottica}
 dict_antenna = {"ip" : ip_antenna, "stato" : '', "versione" : '', "user" : user_antenna, "pwd" : pwd_antenna}
