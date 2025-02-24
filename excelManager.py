@@ -6,7 +6,6 @@ from openpyxl.styles import Alignment, PatternFill, Border, Side, Font
 def insertInfoRun(nome_file, dict_info_Excel, dict_periferiche) :
 
     lista_ip_periferiche_Excel = []
-
     for key in dict_periferiche :    
         if key == "barriera_ottica": nome_completo = "Barriera Ottica" 
         if key == "antenna": nome_completo = "Antenna RFID"
@@ -23,7 +22,6 @@ def insertInfoRun(nome_file, dict_info_Excel, dict_periferiche) :
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Parmetri utilizzati"
-    ws.append(["Parametro", "Valore"])
     bordi = Border(left=Side(style='medium'),
                      right=Side(style='medium'),
                      top=Side(style='medium'),
@@ -31,12 +29,23 @@ def insertInfoRun(nome_file, dict_info_Excel, dict_periferiche) :
     bold_font = Font(bold=True)
     centering = Alignment(horizontal="center", vertical="center")
 
-    for cell in ws[1]:
-        cell.font = bold_font
-        cell.border = bordi
-        cell.alignment = centering
+    ws.merge_cells('A1:B1')
+    header_cell = ws.cell(row=1, column=1, value="Parametri utilizzati dal Tool")
+    header_cell.font = Font(bold=True)
+    header_cell.alignment = centering
+   
+    ws.insert_rows(2)
 
-    row_i = 2
+    ws["A2"] = "Parametro"
+    ws["B2"] = "Valore"
+    ws["A2"].font = bold_font
+    ws["B2"].font = bold_font
+    ws["A2"].border = bordi
+    ws["B2"].border = bordi
+    ws["A2"].alignment = centering
+    ws["B2"].alignment = centering
+
+    row_i = 3
     col_widths = [len("Parametro"), len("Valore")]
 
     dict_info_Excel["lista_ip_periferiche"] = lista_ip_periferiche_Excel
@@ -67,10 +76,117 @@ def insertInfoRun(nome_file, dict_info_Excel, dict_periferiche) :
 
     ws.column_dimensions["A"].width = 30
     ws.column_dimensions["B"].width = 30
-    ws.row_dimensions[1].height = 25
-    
+    ws.row_dimensions[2].height = 25
 
-    wb.save(nome_file) 
+    
+    
+    # Creo la Prima legenda...
+    colore_rosso = PatternFill(start_color="FF6666", end_color="FF6666", fill_type="solid")
+    colore_verde = PatternFill(start_color="66CC66", end_color="66CC66", fill_type="solid")
+    colore_giallo = PatternFill(start_color="FFEE99", end_color="FFEE99", fill_type="solid")
+    colore_arancione = PatternFill(start_color="e87c1b", end_color="e87c1b", fill_type="solid")
+
+    data = [
+        ("Colore", "Descrizione output ottenuto"),
+        ("Yes", "La macchina o perfierica è stata raggiunta"),
+        ("No", "La macchina o perfierica non è stata raggiunta"),
+        ("Not Expected", "La macchina o periferica non necessita di essere raggiunta"),
+    ]
+
+    ws.row_dimensions[1].height = 25
+    ws.merge_cells('D1:E1')
+    header_cell = ws.cell(row=1, column=4, value="Legenda 'Raggiungibilità Piste Egitto'")
+    header_cell.font = Font(bold=True)
+    header_cell.alignment = centering
+
+
+    for row_idx, row_data in enumerate(data, start=2):
+        for col_idx, value in enumerate(row_data, start=4): 
+            row = ws.cell(row=row_idx, column=col_idx, value=value)
+            row.alignment = Alignment(horizontal="left", vertical="center")
+            row.border = bordi
+
+    
+    for row_idx in range(3, 6):  
+        color_cell = ws.cell(row=row_idx, column=4)
+        if color_cell.value == "Yes":
+            color_cell.fill = colore_verde
+        elif color_cell.value == "No":
+            color_cell.fill = colore_rosso
+        elif color_cell.value == "Not Expected":
+            color_cell.fill = colore_giallo
+        row = ws.cell(row=row_idx, column=4)
+        row.alignment = centering
+
+    # Creo la Seconda legenda...
+    data = [
+        ("Colore", "Descrizione output ottenuto"),
+        ("<version>", "Versione Software recuperata con successo"),
+        ("<WARNING>", "Recuperate due Versioni Software differenti"),
+        ("Unreachable", "Macchina irraggiungibile, Versione Software non recuperata"),
+        ("Not Expected", "Recupero Versione Software non necessario"),
+        ("Error", "Riscontrato errore durante il recupero della Versione Software")
+    ]
+
+    ws.merge_cells('D7:E7')
+    header_cell = ws.cell(row=7, column=4, value="Legenda 'Verifica Versioni Software'")
+    header_cell.font = Font(bold=True)
+    header_cell.alignment = centering
+
+    for row_idx, row_data in enumerate(data, start=8):
+        for col_idx, value in enumerate(row_data, start=4): 
+            row = ws.cell(row=row_idx, column=col_idx, value=value)
+            row.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+            row.border = bordi
+
+    
+    for row_idx in range(9,14):  
+        color_cell = ws.cell(row=row_idx, column=4)
+        if color_cell.value == "<version>":
+            color_cell.fill = colore_verde
+        elif color_cell.value == "<WARNING>":
+            color_cell.fill = colore_arancione
+            row = ws.cell(row=row_idx, column=4, value="<version>")
+        elif color_cell.value == "Unreachable":
+            color_cell.fill = colore_rosso
+        elif color_cell.value == "Not Expected":
+            color_cell.fill = colore_giallo
+        elif color_cell.value == "Error":
+            color_cell.fill = colore_rosso
+        row = ws.cell(row=row_idx, column=4)
+        row.alignment = centering
+
+    for row_idx in range(8, 14):  
+        cell = ws.cell(row=row_idx, column=col_idx)
+        
+
+    ws["D2"].alignment = centering
+    ws["E2"].alignment = centering
+
+    ws["D8"].alignment = centering
+    ws["E8"].alignment = centering
+    
+    max_length = 0
+    for row in ws.iter_rows(min_row=3, max_row=6, min_col=4, max_col=4):
+        for cell in row:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(cell.value)
+            except:
+                pass
+    ws.column_dimensions['D'].width = max_length + 2
+
+    max_length = 0
+    for row in ws.iter_rows(min_row=3, max_row=7, min_col=5, max_col=5):
+        for cell in row:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(cell.value)
+            except:
+                pass
+    ws.column_dimensions['E'].width = max_length + 2 
+
+    wb.save(nome_file)
 
 def insertPingResultsIntoExcel(nome_file, dict_all_piste, colonne_Excel_ping) :
     
@@ -154,7 +270,6 @@ def insertVersionResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel
     colore_giallo = PatternFill(start_color="FFEE99", end_color="FFEE99", fill_type="solid")
     colore_verde = PatternFill(start_color="66CC66", end_color="90EE90", fill_type="solid")
     colore_arancione = PatternFill(start_color="e87c1b", end_color="e87c1b", fill_type="solid")
-    colore_celeste = PatternFill(start_color="1bb9e8", end_color="1bb9e8", fill_type="solid")
 
     for i_col, nome_colonna in enumerate(colonne_Excel_versioni, start=1) :
         colonna = ws2.cell(row=1, column=i_col, value=nome_colonna)
@@ -200,8 +315,6 @@ def insertVersionResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel
                     case "Errore":
                         element = "Error"
                         colore = colore_arancione
-                    case "Non disponibile":
-                        colore = colore_celeste
                 
                 if " -> (WARNING)" in element :
                     colore = colore_arancione
@@ -234,5 +347,5 @@ def insertVersionResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel
              'Fine Esecuzione': "datetime.datetime(2025, 2, 20, 11, 50, 39)", 
              'Tempo Totale (hh:mm:ss)': "datetime.timedelta(seconds=110)"}
 
-dict_peri = {'barriera_ottica': {'ip': '172.16.0.10', 'stato': 'T', 'versione': '1.4.0'}, 'antenna': {'ip': '172.16.0.30', 'stato': 'T', 'versione': 'KAT ACQ 1.16'}, 'anpr_zona_1': {'ip': '172.16.0.21', 'stato': 'T', 'versione': 'Non disponibile'}, 'anpr_zona_2': {'ip': '172.16.0.22', 'stato': 'N', 'versione': 'Not Expected'}, 'anpr_zona_3': {'ip': '172.16.0.22', 'stato': 'T', 'versione': 'Non disponibile'}, 'bio': {'ip': '172.16.0.2', 'stato': 'T', 'versioneBIO': 'BIO_EGYPT v1.01, BIO v02.02, SAM_ATECH v05.19', 'versioneDAC': '1.7.0'}, 'stampante': {'ip': '172.16.0.40', 'stato': 'T'}, 'fare_display': {'ip': '172.16.0.60', 'stato': 'T'}, 'WIM': {'ip': '172.16.0.70', 'stato': 'T'}}'''
-
+dict_peri = {'barriera_ottica': {'ip': '172.16.0.10', 'stato': 'T', 'versione': '1.4.0'}, 'antenna': {'ip': '172.16.0.30', 'stato': 'T', 'versione': 'KAT ACQ 1.16'}, 'anpr_zona_1': {'ip': '172.16.0.21', 'stato': 'T', 'versione': 'Non disponibile'}, 'anpr_zona_2': {'ip': '172.16.0.22', 'stato': 'N', 'versione': 'Not Expected'}, 'anpr_zona_3': {'ip': '172.16.0.22', 'stato': 'T', 'versione': 'Non disponibile'}, 'bio': {'ip': '172.16.0.2', 'stato': 'T', 'versioneBIO': 'BIO_EGYPT v1.01, BIO v02.02, SAM_ATECH v05.19', 'versioneDAC': '1.7.0'}, 'stampante': {'ip': '172.16.0.40', 'stato': 'T'}, 'fare_display': {'ip': '172.16.0.60', 'stato': 'T'}, 'WIM': {'ip': '172.16.0.70', 'stato': 'T'}}
+'''
