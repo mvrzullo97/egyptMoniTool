@@ -1,9 +1,12 @@
 import dbManager, excelManager
-import sys, os, time, math, re, time, json
+import sys, os, re, time, json
 from paramiko import AutoAddPolicy, SSHClient
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
 from requests.auth import HTTPDigestAuth
+import pytz
+import warnings
+
 
 class DualLogger:
     def __init__(self, filename):
@@ -74,16 +77,60 @@ def checkPingPeriferiche(dict_periferiche, ssh_client, tipo_pista) -> str :
         
     return lista_stato_periferiche
 
+def checkVecchiaiaFiles(ssh_client: SSHClient, cmd) -> bool:
+    stdin, stdout, stderr = ssh_client.exec_command(cmd)
+    min_ts_str = stdout.read().decode().strip()
+    if min_ts_str != "" or None :
+        current_year = datetime.now().year
+        min_ts_date = datetime.strptime(min_ts_str, "%b %d %H:%M")
+
+        if min_ts_date.replace(year=current_year) > datetime.now():
+            min_ts_date = min_ts_date.replace(year=current_year - 1)
+        else:
+            min_ts_date = min_ts_date.replace(year=current_year)
+
+        egypt_tz = pytz.timezone("Africa/Cairo")
+        min_ts_date = egypt_tz.localize(min_ts_date)
+        regex_ts_date = min_ts_date + timedelta(minutes=10)
+        egypt_time = datetime.now(egypt_tz)
+
+        if regex_ts_date >= egypt_time:
+            return True
+        else:
+            return False
+    else:
+        print(f"Il comando bash lanciato: {cmd} non ha prodotto alcun risultato!" )
+        return False
+    
 def getInfoBySSHSession(controller_pista, dict_pacchetti_controller, dict_periferiche, user, pwd, tipo_pista) : 
     ssh_client = SSHClient()
     ssh_client.set_missing_host_key_policy(AutoAddPolicy())
-    
     lista_stato_periferiche=''
-    
+    stato_transiti_foto = ""
     try:       
         ssh_client.connect(hostname=controller_pista, username=user, password=pwd, allow_agent=True, look_for_keys=True)
         print(f"------> Avvio connessione in ssh ({controller_pista}) <------\n")
         
+        print("Verifico se viene rispettata la tolleranza di vecchiaia su specifici file del Controller di Pista...")
+        cmd_transiti = "ls -ltr /acme/spool/transits/ | grep ^- | head -1 | awk '{print $6, $7, $8}'"
+        cmd_foto = "ls -ltr /acme/spool/photos | grep ^- | head -1 | awk '{print $6, $7, $8}'"
+        
+        stato_foto = checkVecchiaiaFiles(ssh_client, cmd_foto)
+        stato_transito = checkVecchiaiaFiles(ssh_client, cmd_transiti)
+
+        if stato_transito and stato_foto :
+            stato_transiti_foto = "OK"
+            print(f"---> Esito: {stato_transiti_foto}\nTutti i file presenti nelle cartelle '/acme/spool/transits/' e '../photos/' rispettano la tolleranza di vecchiaia applicata (max -10 minuti rispetto sydate)\n")
+        elif not stato_transito and not stato_foto :
+            stato_transiti_foto = "KO"
+            print(f"---> Esito: {stato_transiti_foto}\nNelle cartelle '/acme/spool/transits/' e '../photos/' sono presenti file che non rispettano la tolleranza di vecchiaia applicata (max -10 minuti rispetto sysdate)\n")
+        elif not stato_transito :
+            stato_transiti_foto = "Transiti KO"
+            print(f"---> Esito: {stato_transiti_foto}\nNella cartella '/acme/spool/transits/' sono presenti file che non rispettano la tolleranza di vecchiaia applicata (max -10 minuti rispetto sysdate)\n")
+        elif not stato_foto :
+            stato_transiti_foto = "Foto KO"
+            print(f"---> Esito: {stato_transiti_foto}\nNella cartella '/acme/spool/photos/' sono presenti file che non rispettano la tolleranza di vecchiaia applicata (max -10 minuti rispetto sysdate)\n")
+
         print("Recupero versioni controller di Pista e pacchetti relativi...")
         vrs_ctr, lista_vrs_pacchetti = getVersioneControllerAndPacchetti(dict_pacchetti_controller, ssh_client)
         print("Versioni controller e pacchetti recuperate con successo!\n")
@@ -96,12 +143,10 @@ def getInfoBySSHSession(controller_pista, dict_pacchetti_controller, dict_perife
         dict_versioni_periferiche = getVersioniPeriferiche(ssh_client, dict_periferiche, lista_stato_periferiche, controller_pista)
         print("Versioni Software recuperate con successo!\n")
 
-    finally : 
-        
-        print(f"------> Chiudo connessione in ssh ({controller_pista}) <------\n")
-        
+    finally :    
+        print(f"------> Chiudo connessione in ssh ({controller_pista}) <------\n") 
         ssh_client.close()
-        return vrs_ctr, lista_vrs_pacchetti, lista_stato_periferiche, dict_versioni_periferiche
+        return vrs_ctr, lista_vrs_pacchetti, lista_stato_periferiche, dict_versioni_periferiche, stato_transiti_foto
 
 def getVersioneControllerAndPacchetti (dict_pacchetti_controller, ssh_client: SSHClient) -> str :
     
@@ -351,6 +396,7 @@ def getVersioniAxis(ip_axis, user, pwd, type) -> str:
         print(f"---> Errore durante il recupero della Versione Telecamera Axis {type}, lo traccio nel file Excel...")
     return versione_telecamera
 
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 json_filename = "config.json"
 
 try:
@@ -365,6 +411,7 @@ try:
         db_user = config['database']['user']
         db_pwd = config['database']['pwd']
 
+        rete = config['pista']['rete']
         stazione = config['pista']['stazione']
         
         user_controller = config['info_controller']['user']
@@ -418,7 +465,7 @@ sys.stdout = DualLogger("report_egitto.log")
 db_connection = dbManager.connessione_db_gsegy06(db_name, db_user, db_pwd, db_ip, db_port)
 
 if db_connection :
-    piste = dbManager.select_data_from_tjmd06_lne(db_connection, stazione)
+    piste = dbManager.select_data_from_tjmd06_lne(db_connection, stazione, rete)
 
 dict_barriera_ottica = {"ip" : ip_barriera_ottica, "stato" : '', "versione" : '', "user" : user_barriera_ottica, "pwd" : pwd_barriera_ottica}
 dict_antenna = {"ip" : ip_antenna, "stato" : '', "versione" : '', "user" : user_antenna, "pwd" : pwd_antenna}
@@ -447,7 +494,7 @@ dict_pacchetti_controller = {"movyonEgypt-" :'',
                              "arcd-" :'',
                              "arcd_application_core-" :''}
 
-dict_controller = {"ip" : '', "stato" : '', "versione" :'', "versione_pacchetti" :dict_pacchetti_controller}
+dict_controller = {"ip" : '', "stato" : '', "versione" : '', "versione_pacchetti" : dict_pacchetti_controller, "stato_transiti_foto" : ""}
 dict_axis_external = {"ip" : '', "stato" : '', "versione" : ''}
 dict_axis_internal = {"ip" : '', "stato" : '', "versione" : ''}
 
@@ -475,7 +522,7 @@ for j in range(0, len(piste)) :
     dict_fare_display = {"ip" : ip_fare_display, "stato" : ''}
     dict_WIM = {"ip" : ip_WIM, "stato" : ''}
     dict_periferiche = {"barriera_ottica" : dict_barriera_ottica, "antenna" : dict_antenna, "anpr_zona_1" : dict_anpr_zona_1, "anpr_zona_2" : dict_anpr_zona_2, "anpr_zona_3" : dict_anpr_zona_3, "bio" : dict_bio, "stampante" : dict_stampante, "fare_display" : dict_fare_display, "WIM" : dict_WIM}
-    dict_controller = {"ip" : '', "stato" : '', "versione" : '', "versione_pacchetti" :dict_pacchetti_controller}
+    dict_controller = {"ip" : '', "stato" : '', "versione" : '', "versione_pacchetti" : dict_pacchetti_controller, "stato_transiti_foto" : ""}
     dict_axis_external = {"ip" : '', "stato" : '', "versione" : ''}
     dict_axis_internal = {"ip" : '', "stato" : '', "versione" : ''}
     dict_pista = {"codice_pista" : '', "tipo_pista" : '', "controller_pista" : [dict_controller,  dict_periferiche], "axis_external" : dict_axis_external, "axis_internal" : dict_axis_internal}
@@ -513,8 +560,8 @@ for j in range(0, len(piste)) :
             
             if dict_pista[key][0]["stato"] == "F" :
                 
-                print("Controller di Pista non raggiungibile, considero 'Unreachable' periferiche e versioni relative...\n")
-                
+                print("Controller di Pista non raggiungibile, considero 'Unreachable' periferiche versioni relative...\n")
+                dict_pista[key][0]["stato_transiti_foto"] = "Unreachable"
                 lista_stato_periferiche = 'FFFFFFFFF'
                 dict_pista[key][0]["versione"] = unreachable_vrs
 
@@ -530,10 +577,11 @@ for j in range(0, len(piste)) :
                         dict_periferiche[key]["versione"] = unreachable_vrs
                                 
             else :
-                versione_controller, lista_versione_pacchetti, lista_stato_periferiche, dict_versione_periferiche = getInfoBySSHSession(controller_pista, 
+                versione_controller, lista_versione_pacchetti, lista_stato_periferiche, dict_versione_periferiche, stato_transiti_foto = getInfoBySSHSession(controller_pista, 
                                                                                                         dict_pacchetti_controller, 
                                                                                                         dict_periferiche, 
                                                                                                         user_controller, pwd_controller, tipo_pista)
+                dict_pista[key][0]["stato_transiti_foto"] = stato_transiti_foto
                 dict_pista[key][0]["versione"] = versione_controller.strip()
 
                 for i, key_pacchetto in enumerate(dict_pacchetti_controller) :
@@ -568,7 +616,8 @@ tempo_tot = f"{ore} ore, {minuti} minuti, {secondi} secondi"
 print(f"Tempo di esecuzione totale: {tempo_tot}")
 
 
-nome_file_Excel="report_piste_Egitto.xlsx"
+ts_fine_esec = fine_esecuzione.strftime("%Y.%m.%d.%H.%M")
+nome_file_Excel=f"{ts_fine_esec} Egitto-Monitoraggio Rete {rete} Stazione {stazione}.xlsx"
 
 colonne_Excel_ping = ('Codice Pista', 'Tipo Pista', 'Controller', 'Barriera Ottica', 'Antenna RFID', 
                  'Telecamera ANPR Zona 1', 'Telecamera ANPR Zona 2', 'Telecamera ANPR Zona 3',
@@ -580,17 +629,19 @@ colonne_Excel_versioni = ('Codice Pista', 'Controller',
                           'Telecamera ANPR Zona 1', 'Telecamera ANPR Zona 2', 'Telecamera ANPR Zona 3',
                           'Bio Board', 'DAC Driver', 'Telecamera CCTV esterna', 'Telecamera CCTV interna')
 
-dict_info_Excel = {"Stazione" : stazione,
-                   "IP Database" : db_ip,
+dict_info_Excel = {"IP Database" : db_ip,
                    "Nome Database" : db_name,
+                   "Rete" : rete,
+                   "Stazione" : stazione,
                    "lista_ip_periferiche" : "",
                    "Inizio Esecuzione" : inizio_esecuzione,
                    "Fine Esecuzione" : fine_esecuzione,
-                   "Tempo Totale (hh:mm:ss)" : diff}
+                   "Tempo Totale (hh:mm:ss)" : diff }
 
-excelManager.insertInfoRun(nome_file_Excel, dict_info_Excel, dict_periferiche)
+excelManager.insertInfoRunAndLegende(nome_file_Excel, dict_info_Excel, dict_periferiche)
 excelManager.insertPingResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel_ping)
 excelManager.insertVersionResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel_versioni)
+excelManager.insertStatoTransitiFotoIntoExcel(nome_file_Excel, dict_all_piste)
 
 print(f"\nFile '{nome_file_Excel}' generato con successo!")
 print("File salvato in:", os.path.abspath(nome_file_Excel) +"\n")
