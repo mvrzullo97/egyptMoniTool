@@ -3,7 +3,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment, PatternFill, Border, Side, Font
 
 
-def insertInfoRun(nome_file, dict_info_Excel, dict_periferiche) :
+def insertInfoRunAndLegende(nome_file, dict_info_Excel, dict_periferiche) :
 
     lista_ip_periferiche_Excel = []
     for key in dict_periferiche :    
@@ -75,7 +75,7 @@ def insertInfoRun(nome_file, dict_info_Excel, dict_periferiche) :
             row_i += 1
 
     ws.column_dimensions["A"].width = 30
-    ws.column_dimensions["B"].width = 30
+    ws.column_dimensions["B"].width = 20
     ws.row_dimensions[2].height = 25
 
     
@@ -87,11 +87,10 @@ def insertInfoRun(nome_file, dict_info_Excel, dict_periferiche) :
     colore_arancione = PatternFill(start_color="e87c1b", end_color="e87c1b", fill_type="solid")
 
     data = [
-        ("Colore", "Descrizione output ottenuto"),
-        ("Yes", "La macchina o perfierica è stata raggiunta"),
-        ("No", "La macchina o perfierica non è stata raggiunta"),
+        ("Esito", "Descrizione output ottenuto"),
+        ("Yes", "La macchina o periferica è stata raggiunta"),
         ("Not Expected", "La macchina o periferica non necessita di essere raggiunta"),
-    ]
+        ("No", "La macchina o periferica non è stata raggiunta") ]
 
     ws.row_dimensions[1].height = 25
     ws.merge_cells('D1:E1')
@@ -120,13 +119,12 @@ def insertInfoRun(nome_file, dict_info_Excel, dict_periferiche) :
 
     # Creo la Seconda legenda...
     data = [
-        ("Colore", "Descrizione output ottenuto"),
-        ("<version>", "Versione Software recuperata con successo"),
-        ("<WARNING>", "Recuperate due Versioni Software differenti"),
-        ("Unreachable", "Macchina irraggiungibile, Versione Software non recuperata"),
-        ("Not Expected", "Recupero Versione Software non necessario"),
-        ("Error", "Riscontrato errore durante il recupero della Versione Software")
-    ]
+        ("Esito", "Descrizione output ottenuto"),
+        ("<version>", "La versione Software è stata recuperata con successo"),
+        ("Not Expected", "Il recupero della versione Software non è necessario"),
+        ("<WARNING>", "Sono state recuperate due versioni Software differenti"),
+        ("Unreachable", "La macchina è irraggiungibile, non è stato possibile recuperare la versione Software"),
+        ("Error", "È stato riscontrato un errore durante il recupero della versione Software") ]
 
     ws.merge_cells('D7:E7')
     header_cell = ws.cell(row=7, column=4, value="Legenda 'Verifica Versioni Software'")
@@ -156,35 +154,57 @@ def insertInfoRun(nome_file, dict_info_Excel, dict_periferiche) :
         row = ws.cell(row=row_idx, column=4)
         row.alignment = centering
 
-    for row_idx in range(8, 14):  
-        cell = ws.cell(row=row_idx, column=col_idx)
-        
-
     ws["D2"].alignment = centering
     ws["E2"].alignment = centering
 
     ws["D8"].alignment = centering
     ws["E8"].alignment = centering
     
-    max_length = 0
-    for row in ws.iter_rows(min_row=3, max_row=6, min_col=4, max_col=4):
-        for cell in row:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = len(cell.value)
-            except:
-                pass
-    ws.column_dimensions['D'].width = max_length + 2
+    # Creo la Terza legenda...
+    colore_rosso = PatternFill(start_color="FF6666", end_color="FF6666", fill_type="solid")
+    colore_verde = PatternFill(start_color="66CC66", end_color="66CC66", fill_type="solid")
+    colore_giallo = PatternFill(start_color="FFEE99", end_color="FFEE99", fill_type="solid")
 
-    max_length = 0
-    for row in ws.iter_rows(min_row=3, max_row=7, min_col=5, max_col=5):
-        for cell in row:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = len(cell.value)
-            except:
-                pass
-    ws.column_dimensions['E'].width = max_length + 2 
+    data = [
+        ("Esito", "Descrizione output ottenuto (tolleranza = -10 minuti rispetto sysdate)"),
+        ("OK", "Tutti i file in '/acme/spool/transits/' e '../photos/' rispettano la tolleranza"),
+        ("Transits KO", "Uno o più file presenti in '/acme/spool/transits/' non rispettano la tolleranza"),
+        ("Photos KO", "Uno o più file presenti in '/acme/spool/photos/' non rispettano la tolleranza"),
+        ("KO", "Alcuni file presenti sia in '/acme/spool/transits/' che in '../photos/' non rispettano la tolleranza"),
+        ("Unreachable", "Non è stato possibile verificare la vecchiaia causa irraggiungibilità del Controller") ]
+
+    
+    ws.merge_cells('D15:E15')
+    header_cell = ws.cell(row=15, column=4, value="Legenda 'Verifica Vecchiaia File'")
+    header_cell.font = Font(bold=True)
+    header_cell.alignment = centering
+
+
+    for row_idx, row_data in enumerate(data, start=16):
+        for col_idx, value in enumerate(row_data, start=4): 
+            row = ws.cell(row=row_idx, column=col_idx, value=value)
+            row.alignment = Alignment(horizontal="left", vertical="center")
+            row.border = bordi
+
+    for row_idx in range(15,22):
+        ws.row_dimensions[row_idx].height = 25  
+        color_cell = ws.cell(row=row_idx, column=4)
+        if color_cell.value == "OK":
+            color_cell.fill = colore_verde
+        elif color_cell.value == "KO":
+            color_cell.fill = colore_rosso
+        elif color_cell.value == "Transits KO":
+            color_cell.fill = colore_giallo
+        elif color_cell.value == "Photos KO":
+            color_cell.fill = colore_giallo
+        elif color_cell.value == "Unreachable":
+            color_cell.fill = colore_rosso
+        row = ws.cell(row=row_idx, column=4)
+        row.alignment = centering
+
+    
+    ws.column_dimensions["D"].width = 15
+    ws.column_dimensions["E"].width = 85
 
     wb.save(nome_file)
 
@@ -194,7 +214,10 @@ def insertPingResultsIntoExcel(nome_file, dict_all_piste, colonne_Excel_ping) :
     ws = wb.create_sheet("Raggiungibilità Piste Egitto")
     bold_colonne = Font(bold=True)
 
-    bordi = Border(left=Side(border_style="thin", color="000000"), right=Side(border_style="thin", color="000000"), top=Side(border_style="thin", color="000000"), bottom=Side(border_style="thin", color="000000"))
+    bordi = Border(left=Side(border_style="thin", color="000000"), 
+                   right=Side(border_style="thin", color="000000"), 
+                   top=Side(border_style="thin", color="000000"), 
+                   bottom=Side(border_style="thin", color="000000"))
 
     colore_rosso = PatternFill(start_color="FF6666", end_color="FF6666", fill_type="solid")
     colore_verde = PatternFill(start_color="66CC66", end_color="66CC66", fill_type="solid")
@@ -339,13 +362,57 @@ def insertVersionResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel
 
     wb.save(nome_file_Excel)
 
+def insertStatoTransitiFotoIntoExcel(nome_file_Excel, dict_all_piste) :
+    wb = load_workbook(nome_file_Excel)
+    ws = wb.create_sheet("Verifica Vecchiaia File")
+    bordi = Border(left=Side(style='medium'),
+                     right=Side(style='medium'),
+                     top=Side(style='medium'),
+                     bottom=Side(style='medium'))
+    bold_font = Font(bold=True)
+    centering = Alignment(horizontal="center", vertical="center")
 
-'''dict_info = {'Stazione': 1, 
-             'IP Database': '10.1.12.4', 
-             'lista_ip_periferiche': '', 
-             'Inizio Esecuzione': "datetime.datetime(2025, 2, 20, 11, 48, 49)", 
-             'Fine Esecuzione': "datetime.datetime(2025, 2, 20, 11, 50, 39)", 
-             'Tempo Totale (hh:mm:ss)': "datetime.timedelta(seconds=110)"}
+    colore_rosso = PatternFill(start_color="FF6666", end_color="FF6666", fill_type="solid")
+    colore_verde = PatternFill(start_color="66CC66", end_color="66CC66", fill_type="solid")
+    colore_giallo = PatternFill(start_color="FFEE99", end_color="FFEE99", fill_type="solid")
 
-dict_peri = {'barriera_ottica': {'ip': '172.16.0.10', 'stato': 'T', 'versione': '1.4.0'}, 'antenna': {'ip': '172.16.0.30', 'stato': 'T', 'versione': 'KAT ACQ 1.16'}, 'anpr_zona_1': {'ip': '172.16.0.21', 'stato': 'T', 'versione': 'Non disponibile'}, 'anpr_zona_2': {'ip': '172.16.0.22', 'stato': 'N', 'versione': 'Not Expected'}, 'anpr_zona_3': {'ip': '172.16.0.22', 'stato': 'T', 'versione': 'Non disponibile'}, 'bio': {'ip': '172.16.0.2', 'stato': 'T', 'versioneBIO': 'BIO_EGYPT v1.01, BIO v02.02, SAM_ATECH v05.19', 'versioneDAC': '1.7.0'}, 'stampante': {'ip': '172.16.0.40', 'stato': 'T'}, 'fare_display': {'ip': '172.16.0.60', 'stato': 'T'}, 'WIM': {'ip': '172.16.0.70', 'stato': 'T'}}
-'''
+    ws["A1"] = "IP Controller"
+    ws["B1"] = "Transits&Photos"
+    ws["A1"].font = bold_font
+    ws["B1"].font = bold_font
+    ws["A1"].border = bordi
+    ws["B1"].border = bordi
+    ws["A1"].alignment = centering
+    ws["B1"].alignment = centering
+
+    for i,key in enumerate(dict_all_piste) :
+        ip_controller = dict_all_piste[key]["controller_pista"][0]["ip"]
+        stato = dict_all_piste[key]["controller_pista"][0]["stato_transiti_foto"]
+        
+        row = ws.cell(row=i+2, column=1, value=ip_controller)
+        row.alignment = Alignment(horizontal="center", vertical="center")
+        row.border = bordi
+        row = ws.cell(row=i+2, column=2, value=stato)
+        
+        match stato :
+                case "OK":
+                    colore = colore_verde
+                case "KO":
+                    colore = colore_rosso
+                case "Transits KO" | "Photos KO":
+                    colore = colore_giallo
+                case "Unreachable":
+                    colore = colore_rosso
+        row.fill = colore
+        row.border = bordi
+        row.alignment = Alignment(horizontal="center", vertical="center")
+        row.font = bold_font
+        
+    ws.column_dimensions["A"].width = 18
+    ws.column_dimensions["B"].width = 18
+    
+    for row in range(1, ws.max_row + 1):  
+        ws.row_dimensions[row].height = 25
+
+
+    wb.save(nome_file_Excel)
