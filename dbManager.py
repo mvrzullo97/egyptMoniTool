@@ -22,10 +22,10 @@ def select_data_from_tjmd06_lne (db_connection, stazione, rete):
         q = f'''SELECT C_LNE, TRIM(C_LNE_TYP), N_IP_CON_CRO, N_IP_CTV, N_IP_TLL_BTH 
             FROM JMDA.TJMD06_LNE WHERE C_NET = {rete} AND C_TLL_PLZ = {stazione} ORDER BY C_LNE ASC'''
         cursor.execute(q)
-        #res = cursor.fetchmany(size=1)
-        res = cursor.fetchall()
+        res = cursor.fetchmany(size=1)
+        #res = cursor.fetchall()
         if res :
-            print(f"Ho trovato {len(res)} record nella tabella TJMD06_LNE aventi rete {rete} e stazione {stazione}, li estraggo...")
+            print(f"---> Ho trovato {len(res)} record nella tabella TJMD06_LNE aventi rete {rete} e stazione {stazione}, li estraggo...")
             return res
     except psycopg2.Error as err:
         print(f"Errore durante l'esecuzione della Query: {err}")

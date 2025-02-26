@@ -1,4 +1,4 @@
-import openpyxl
+import openpyxl, os
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, PatternFill, Border, Side, Font
 
@@ -21,16 +21,16 @@ def insertInfoRunAndLegende(nome_file, dict_info_Excel, dict_periferiche) :
     
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Parmetri utilizzati"
-    bordi = Border(left=Side(style='medium'),
-                     right=Side(style='medium'),
-                     top=Side(style='medium'),
-                     bottom=Side(style='medium'))
+    ws.title = "Parametri Tool"
+    bordi = Border(left=Side(style='thin'),
+                     right=Side(style='thin'),
+                     top=Side(style='thin'),
+                     bottom=Side(style='thin'))
     bold_font = Font(bold=True)
     centering = Alignment(horizontal="center", vertical="center")
 
     ws.merge_cells('A1:B1')
-    header_cell = ws.cell(row=1, column=1, value="Parametri utilizzati dal Tool")
+    header_cell = ws.cell(row=1, column=1, value="Parametri Tool")
     header_cell.font = Font(bold=True)
     header_cell.alignment = centering
    
@@ -171,11 +171,11 @@ def insertInfoRunAndLegende(nome_file, dict_info_Excel, dict_periferiche) :
         ("Transits KO", "Uno o più file presenti in '/acme/spool/transits/' non rispettano la tolleranza"),
         ("Photos KO", "Uno o più file presenti in '/acme/spool/photos/' non rispettano la tolleranza"),
         ("KO", "Alcuni file presenti sia in '/acme/spool/transits/' che in '../photos/' non rispettano la tolleranza"),
-        ("Unreachable", "Non è stato possibile verificare la vecchiaia causa irraggiungibilità del Controller") ]
+        ("Unreachable", "Non è stato possibile verificare la vecchiaia dei file causa irraggiungibilità del Controller") ]
 
     
     ws.merge_cells('D15:E15')
-    header_cell = ws.cell(row=15, column=4, value="Legenda 'Verifica Vecchiaia File'")
+    header_cell = ws.cell(row=15, column=4, value="Legenda 'Acquisizione file acme spool'")
     header_cell.font = Font(bold=True)
     header_cell.alignment = centering
 
@@ -205,6 +205,9 @@ def insertInfoRunAndLegende(nome_file, dict_info_Excel, dict_periferiche) :
     
     ws.column_dimensions["D"].width = 15
     ws.column_dimensions["E"].width = 85
+
+    ws["D16"].alignment = centering
+    ws["E16"].alignment = centering
 
     wb.save(nome_file)
 
@@ -287,7 +290,10 @@ def insertVersionResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel
 
 
     bold_colonne = Font(bold=True)
-    bordi = Border(left=Side(border_style="thin", color="000000"), right=Side(border_style="thin", color="000000"), top=Side(border_style="thin", color="000000"), bottom=Side(border_style="thin", color="000000"))
+    bordi = Border(left=Side(border_style="thin", color="000000"), 
+                   right=Side(border_style="thin", color="000000"), 
+                   top=Side(border_style="thin", color="000000"), 
+                   bottom=Side(border_style="thin", color="000000"))
 
     colore_rosso = PatternFill(start_color="FF6666", end_color="FF6666", fill_type="solid")
     colore_giallo = PatternFill(start_color="FFEE99", end_color="FFEE99", fill_type="solid")
@@ -337,7 +343,7 @@ def insertVersionResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel
                         colore = colore_rosso
                     case "Errore":
                         element = "Error"
-                        colore = colore_arancione
+                        colore = colore_rosso
                 
                 if " -> (WARNING)" in element :
                     colore = colore_arancione
@@ -364,11 +370,11 @@ def insertVersionResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel
 
 def insertStatoTransitiFotoIntoExcel(nome_file_Excel, dict_all_piste) :
     wb = load_workbook(nome_file_Excel)
-    ws = wb.create_sheet("Verifica Vecchiaia File")
-    bordi = Border(left=Side(style='medium'),
-                     right=Side(style='medium'),
-                     top=Side(style='medium'),
-                     bottom=Side(style='medium'))
+    ws = wb.create_sheet("Acquisizione file acme spool")
+    bordi = Border(left=Side(style='thin'),
+                     right=Side(style='thin'),
+                     top=Side(style='thin'),
+                     bottom=Side(style='thin'))
     bold_font = Font(bold=True)
     centering = Alignment(horizontal="center", vertical="center")
 
@@ -406,7 +412,6 @@ def insertStatoTransitiFotoIntoExcel(nome_file_Excel, dict_all_piste) :
         row.fill = colore
         row.border = bordi
         row.alignment = Alignment(horizontal="center", vertical="center")
-        row.font = bold_font
         
     ws.column_dimensions["A"].width = 18
     ws.column_dimensions["B"].width = 18

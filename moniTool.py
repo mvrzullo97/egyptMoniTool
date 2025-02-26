@@ -120,16 +120,16 @@ def getInfoBySSHSession(controller_pista, dict_pacchetti_controller, dict_perife
 
         if stato_transito and stato_foto :
             stato_transiti_foto = "OK"
-            print(f"---> Esito: {stato_transiti_foto}\nTutti i file presenti nelle cartelle '/acme/spool/transits/' e '../photos/' rispettano la tolleranza di vecchiaia applicata (max -10 minuti rispetto sydate)\n")
+            print(f"---> Esito: {stato_transiti_foto}\n")
         elif not stato_transito and not stato_foto :
             stato_transiti_foto = "KO"
-            print(f"---> Esito: {stato_transiti_foto}\nNelle cartelle '/acme/spool/transits/' e '../photos/' sono presenti file che non rispettano la tolleranza di vecchiaia applicata (max -10 minuti rispetto sysdate)\n")
+            print(f"---> Esito: {stato_transiti_foto}\n")
         elif not stato_transito :
             stato_transiti_foto = "Transits KO"
-            print(f"---> Esito: {stato_transiti_foto}\nNella cartella '/acme/spool/transits/' sono presenti file che non rispettano la tolleranza di vecchiaia applicata (max -10 minuti rispetto sysdate)\n")
+            print(f"---> Esito: {stato_transiti_foto}\n")
         elif not stato_foto :
             stato_transiti_foto = "Photos KO"
-            print(f"---> Esito: {stato_transiti_foto}\nNella cartella '/acme/spool/photos/' sono presenti file che non rispettano la tolleranza di vecchiaia applicata (max -10 minuti rispetto sysdate)\n")
+            print(f"---> Esito: {stato_transiti_foto}\n")
 
         print("Recupero versioni controller di Pista e pacchetti relativi...")
         vrs_ctr, lista_vrs_pacchetti = getVersioneControllerAndPacchetti(dict_pacchetti_controller, ssh_client)
@@ -413,6 +413,8 @@ try:
 
         rete = config['pista']['rete']
         stazione = config['pista']['stazione']
+        folder_name_Excel_out = config['pista']['folder_output']
+        log = config['pista']['logging']
         
         user_controller = config['info_controller']['user']
         pwd_controller = config['info_controller']['pwd']
@@ -460,12 +462,19 @@ except json.JSONDecodeError:
         sys.exit(1)
 
 
+if os.path.exists(folder_name_Excel_out) and os.path.isdir(folder_name_Excel_out) :
+    print(f"Cartella {folder_name_Excel_out} esistente al path: '{os.path.abspath(folder_name_Excel_out)}'...")
+else :
+    print(f"Cartella {folder_name_Excel_out} non trovata, la creo...")
+    os.makedirs(folder_name_Excel_out, exist_ok=True)
+
 inizio_esecuzione = datetime.now().replace(microsecond=0)
-sys.stdout = DualLogger("tmp.log")
+
+if log : sys.stdout = DualLogger("tmp.log")
+
 db_connection = dbManager.connessione_db_gsegy06(db_name, db_user, db_pwd, db_ip, db_port)
 
-if db_connection :
-    piste = dbManager.select_data_from_tjmd06_lne(db_connection, stazione, rete)
+if db_connection : piste = dbManager.select_data_from_tjmd06_lne(db_connection, stazione, rete)
 
 dict_barriera_ottica = {"ip" : ip_barriera_ottica, "stato" : '', "versione" : '', "user" : user_barriera_ottica, "pwd" : pwd_barriera_ottica}
 dict_antenna = {"ip" : ip_antenna, "stato" : '', "versione" : '', "user" : user_antenna, "pwd" : pwd_antenna}
@@ -615,7 +624,6 @@ secondi = diff.seconds % 60
 tempo_tot = f"{ore} ore, {minuti} minuti, {secondi} secondi"
 print(f"Tempo di esecuzione totale: {tempo_tot}")
 
-
 ts_fine_esec = fine_esecuzione.strftime("%Y.%m.%d.%H.%M")
 nome_file_Excel=f"{ts_fine_esec} Egitto-Monitoraggio Rete {rete} Stazione {stazione}.xlsx"
 
@@ -638,15 +646,17 @@ dict_info_Excel = {"IP Database" : db_ip,
                    "Fine Esecuzione" : fine_esecuzione,
                    "Tempo Totale (hh:mm:ss)" : diff }
 
-excelManager.insertInfoRunAndLegende(nome_file_Excel, dict_info_Excel, dict_periferiche)
-excelManager.insertPingResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel_ping)
-excelManager.insertVersionResultsIntoExcel(nome_file_Excel, dict_all_piste, colonne_Excel_versioni)
-excelManager.insertStatoTransitiFotoIntoExcel(nome_file_Excel, dict_all_piste)
+path_file_Excel = os.path.join(os.path.abspath(folder_name_Excel_out), nome_file_Excel)
+
+excelManager.insertInfoRunAndLegende(path_file_Excel, dict_info_Excel, dict_periferiche)
+excelManager.insertPingResultsIntoExcel(path_file_Excel, dict_all_piste, colonne_Excel_ping)
+excelManager.insertVersionResultsIntoExcel(path_file_Excel, dict_all_piste, colonne_Excel_versioni)
+excelManager.insertStatoTransitiFotoIntoExcel(path_file_Excel, dict_all_piste)
 
 print(f"\nFile '{nome_file_Excel}' generato con successo!")
-print("File salvato in:", os.path.abspath(nome_file_Excel) +"\n")
+print(f"File salvato in: '{path_file_Excel}'\n")
 
-sys.stdout.close()
-sys.stdout = sys.__stdout__ 
-nome_log = f"Monitoraggio_Egitto_{ts_fine_esec}.log"
-os.rename("tmp.log", nome_log)
+if log :
+    sys.stdout = sys.__stdout__ 
+    nome_log = f"Monitoraggio_Egitto_{ts_fine_esec}.log"
+    os.rename("tmp.log", nome_log)
