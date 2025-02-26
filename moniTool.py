@@ -125,10 +125,10 @@ def getInfoBySSHSession(controller_pista, dict_pacchetti_controller, dict_perife
             stato_transiti_foto = "KO"
             print(f"---> Esito: {stato_transiti_foto}\nNelle cartelle '/acme/spool/transits/' e '../photos/' sono presenti file che non rispettano la tolleranza di vecchiaia applicata (max -10 minuti rispetto sysdate)\n")
         elif not stato_transito :
-            stato_transiti_foto = "Transiti KO"
+            stato_transiti_foto = "Transits KO"
             print(f"---> Esito: {stato_transiti_foto}\nNella cartella '/acme/spool/transits/' sono presenti file che non rispettano la tolleranza di vecchiaia applicata (max -10 minuti rispetto sysdate)\n")
         elif not stato_foto :
-            stato_transiti_foto = "Foto KO"
+            stato_transiti_foto = "Photos KO"
             print(f"---> Esito: {stato_transiti_foto}\nNella cartella '/acme/spool/photos/' sono presenti file che non rispettano la tolleranza di vecchiaia applicata (max -10 minuti rispetto sysdate)\n")
 
         print("Recupero versioni controller di Pista e pacchetti relativi...")
@@ -397,7 +397,7 @@ def getVersioniAxis(ip_axis, user, pwd, type) -> str:
     return versione_telecamera
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
-json_filename = "config.json"
+json_filename = "config_tool.json"
 
 try:
     print(f"\nFile di configurazione {json_filename} trovato, estraggo i parametri...")
@@ -461,7 +461,7 @@ except json.JSONDecodeError:
 
 
 inizio_esecuzione = datetime.now().replace(microsecond=0)
-sys.stdout = DualLogger("report_egitto.log")
+sys.stdout = DualLogger("tmp.log")
 db_connection = dbManager.connessione_db_gsegy06(db_name, db_user, db_pwd, db_ip, db_port)
 
 if db_connection :
@@ -646,4 +646,7 @@ excelManager.insertStatoTransitiFotoIntoExcel(nome_file_Excel, dict_all_piste)
 print(f"\nFile '{nome_file_Excel}' generato con successo!")
 print("File salvato in:", os.path.abspath(nome_file_Excel) +"\n")
 
-
+sys.stdout.close()
+sys.stdout = sys.__stdout__ 
+nome_log = f"Monitoraggio_Egitto_{ts_fine_esec}.log"
+os.rename("tmp.log", nome_log)
