@@ -1,6 +1,10 @@
+from paramiko import Channel
 import psycopg2, sys
 
-def connessione_db_gsegy06 (db_name, user, pwd, ip, port) : 
+def connessione_db_gsegy06 (db_name, user, pwd, ip, port, tunnel_ssh: Channel) : 
+    
+    prot = tunnel_ssh.getpeername()[1]
+
     try:
         db_connection = psycopg2.connect(
             dbname = db_name,
@@ -22,7 +26,7 @@ def select_data_from_tjmd06_lne (db_connection, stazione, rete):
         q = f'''SELECT C_LNE, TRIM(C_LNE_TYP), N_IP_CON_CRO, N_IP_CTV, N_IP_TLL_BTH 
             FROM JMDA.TJMD06_LNE WHERE C_NET = {rete} AND C_TLL_PLZ = {stazione} ORDER BY C_LNE ASC'''
         cursor.execute(q)
-        res = cursor.fetchmany(size=1)
+        res = cursor.fetchmany(size=10)
         #res = cursor.fetchall()
         if res :
             print(f"---> Ho trovato {len(res)} record nella tabella TJMD06_LNE aventi rete {rete} e stazione {stazione}, li estraggo...")
