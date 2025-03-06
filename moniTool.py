@@ -1,11 +1,12 @@
 import dbManager, excelManager
 import sys, os, re, time, json
-from paramiko import AutoAddPolicy, SSHClient
+from paramiko import AutoAddPolicy, Channel, SSHClient
 from datetime import datetime, timedelta
 import requests
 from requests.auth import HTTPDigestAuth
 import pytz
 import warnings
+
 
 
 class DualLogger:
@@ -20,9 +21,12 @@ class DualLogger:
     def flush(self):
         pass 
 
-def checkPingMachine(ip, nome_macchina) -> str :  
+def checkPingMachine(nome_macchina, ip, bridge_ip, bridge_user, bridge_pwd, ssh_client_vmtech: SSHClient) -> str :  
     
-    res = os.popen(f"ping {ip}").read()
+    cmd =f"ping -c 4 {ip}"
+    stdin, stdout, stderr = ssh_client_vmtech.exec_command(cmd)
+    res = stdout.read().decode().strip()
+
     match nome_macchina:
         case "controller_pista" :
             nome_macchina = "Controller di Pista"
@@ -31,8 +35,8 @@ def checkPingMachine(ip, nome_macchina) -> str :
         case "axis_internal" :
             nome_macchina = "Axis Internal"
 
-    if ("Trasmessi = 4") in res and ("Ricevuti = 0") not in res :
-        if ("TTL scaduto durante il passaggio.") in res:
+    if ("4 packets transmitted") in res and ("0 received") not in res :
+        if "TTL expired in transit" in res or "TTL expired during transit" in res :
             print(f"{nome_macchina} (ip: {ip}) non raggiungibile!\n")
             return "F"
         print(f"{nome_macchina} (ip: {ip}) raggiunto!")
@@ -44,7 +48,21 @@ def checkPingMachine(ip, nome_macchina) -> str :
         print(f"{nome_macchina} (ip: {ip}) non raggiungibile!\n")
         return "F"
 
-def checkPingPeriferiche(dict_periferiche, ssh_client, tipo_pista) -> str :
+def createTunnelSSH(ssh_client_vmtech: SSHClient, ip_dest, port=None) :
+    try:
+        transport = ssh_client_vmtech.get_transport()
+        dst_addr = (ip_dest, 22)
+        lcl_addr = ('127.0.0.1', 0)
+        tunnel_ssh: Channel = transport.open_channel("direct-tcpip", dst_addr, lcl_addr)
+
+    except Exception as e:
+        print(f"Errore nella creazione del tunnel SSH: {e}")
+    
+    finally :  
+        if tunnel_ssh.active :
+            return tunnel_ssh
+
+def checkPingPeriferiche(dict_periferiche, ssh_client: SSHClient, tipo_pista) -> str :
     
     lista_stato_periferiche='' 
     
@@ -77,7 +95,7 @@ def checkPingPeriferiche(dict_periferiche, ssh_client, tipo_pista) -> str :
         
     return lista_stato_periferiche
 
-def checkVecchiaiaFiles(ssh_client: SSHClient, cmd) -> bool:
+def checkVecchiaiaFiles(ssh_client: SSHClient, cmd) -> bool :
     stdin, stdout, stderr = ssh_client.exec_command(cmd)
     min_ts_str = stdout.read().decode().strip()
     if min_ts_str != "" or None :
@@ -102,16 +120,24 @@ def checkVecchiaiaFiles(ssh_client: SSHClient, cmd) -> bool:
         print(f"Il comando bash lanciato: {cmd} non ha prodotto alcun risultato!" )
         return False
     
-def getInfoBySSHSession(controller_pista, dict_pacchetti_controller, dict_periferiche, user, pwd, tipo_pista) : 
+def getInfoBySSHSession(ssh_client_vmtech: SSHClient, controller_pista, dict_pacchetti_controller, dict_periferiche, user, pwd, tipo_pista) : 
+    
+    tunnel_ssh = createTunnelSSH(ssh_client_vmtech, controller_pista)
     ssh_client = SSHClient()
     ssh_client.set_missing_host_key_policy(AutoAddPolicy())
+    
     lista_stato_periferiche=''
     stato_transiti_foto = ""
     try:       
-        ssh_client.connect(hostname=controller_pista, username=user, password=pwd, allow_agent=True, look_for_keys=True)
+        ssh_client.connect(hostname=controller_pista, 
+                           username=user, 
+                           password=pwd, 
+                           sock=tunnel_ssh, 
+                           allow_agent=True, look_for_keys=True)
+        
         print(f"------> Avvio connessione in ssh ({controller_pista}) <------\n")
         
-        print("Verifico se viene rispettata la tolleranza di vecchiaia su specifici file del Controller di Pista...")
+        print("Acquisizione acme spool ...")
         cmd_transiti = "ls -ltr /acme/spool/transits/ | grep ^- | head -1 | awk '{print $6, $7, $8}'"
         cmd_foto = "ls -ltr /acme/spool/photos | grep ^- | head -1 | awk '{print $6, $7, $8}'"
         
@@ -146,6 +172,7 @@ def getInfoBySSHSession(controller_pista, dict_pacchetti_controller, dict_perife
     finally :    
         print(f"------> Chiudo connessione in ssh ({controller_pista}) <------\n") 
         ssh_client.close()
+        tunnel_ssh.close()
         return vrs_ctr, lista_vrs_pacchetti, lista_stato_periferiche, dict_versioni_periferiche, stato_transiti_foto
 
 def getVersioneControllerAndPacchetti (dict_pacchetti_controller, ssh_client: SSHClient) -> str :
@@ -160,7 +187,7 @@ def getVersioneControllerAndPacchetti (dict_pacchetti_controller, ssh_client: SS
         stdin, stdout, stderr = ssh_client.exec_command(f'rpm -qa | grep {key}')
         vrs_pac = stdout.read().decode().strip()
         if len(vrs_pac.splitlines()) > 1 :
-            vrs_pac = vrs_pac.replace("\n", ", ")+" -> (WARNING)"
+            vrs_pac = vrs_pac.replace("\n", ", ")+" ---> (WARNING)"
         versioni_pacchetti.append(vrs_pac)
 
         print(f"---> Versione pacchetto {key} recuperata: {vrs_pac}") 
@@ -279,11 +306,11 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                 url_anpr_zona_2 = f"http://{user}:{pwd}@{controller_pista}:32280/cgi-bin/CGI_DeviceInfo.cgi"
         
                 if stato_periferica == "F" :
-                    print(f"---> Versione anpr_zona_2 : {unreachable_vrs}")
+                    print(f"---> Versione Telecamera Anpr Zona 2 : {unreachable_vrs}")
                     dict_versioni_periferiche["v_anpr_zona_2"] = unreachable_vrs
                 
                 elif stato_periferica == "N" :
-                    print(f"---> Versione anpr_zona_2 : {not_expected_vrs}")
+                    print(f"---> Versione Telecamera Anpr Zona 2 : {not_expected_vrs}")
                     dict_versioni_periferiche["v_anpr_zona_2"] = not_expected_vrs
                 
                 else :
@@ -304,11 +331,11 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
                 url_anpr_zona_3 = f"http://{user}:{pwd}@{controller_pista}:32280/cgi-bin/CGI_DeviceInfo.cgi"
 
                 if stato_periferica == "F" :
-                    print(f"---> Versione anpr_zona_3 : {unreachable_vrs}")
+                    print(f"---> Versione Telecamera Anpr Zona 3 : {unreachable_vrs}")
                     dict_versioni_periferiche["v_anpr_zona_3"] = unreachable_vrs
                 
                 elif stato_periferica == "N" :
-                    print(f"---> Versione anpr_zona_3 : {not_expected_vrs}")
+                    print(f"---> Versione Telecamera Anpr Zona 3 : {not_expected_vrs}")
                     dict_versioni_periferiche["v_anpr_zona_3"] = not_expected_vrs
                 
                 else :
@@ -374,7 +401,7 @@ def getVersioniPeriferiche(ssh_client_pista: SSHClient, dict_periferiche, lista_
     
     return dict_versioni_periferiche
 
-def getVersioniAxis(ip_axis, user, pwd, type) -> str:
+def getVersioniAxis(ip_axis, user, pwd, type) -> str: 
     url = f"http://{ip_axis}/axis-cgi/firmwaremanagement.cgi"
     headers = {
         "Accept": "*/*",
@@ -405,6 +432,12 @@ try:
     with open(json_filename, 'r') as f:
         config = json.load(f)
     try :
+        
+        bridge_name = config['bridge']['hostname']
+        bridge_ip = config['bridge']['ip']
+        bridge_user = config['bridge']['user']
+        bridge_pwd = config['bridge']['pwd']
+        
         db_name = config['database']['dbname']
         db_ip = config['database']['ip']
         db_port = config['database']['port']
@@ -461,6 +494,7 @@ except json.JSONDecodeError:
         print(f"Errore: Il file {json_filename} non è un JSON valido!\n")
         sys.exit(1)
 
+if log : sys.stdout = DualLogger("tmp.log")
 
 if os.path.exists(folder_name_Excel_out) and os.path.isdir(folder_name_Excel_out) :
     print(f"Cartella {folder_name_Excel_out} esistente al path: '{os.path.abspath(folder_name_Excel_out)}'...")
@@ -470,11 +504,18 @@ else :
 
 inizio_esecuzione = datetime.now().replace(microsecond=0)
 
-if log : sys.stdout = DualLogger("tmp.log")
+ssh_client_vmtech = SSHClient()
+ssh_client_vmtech.set_missing_host_key_policy(AutoAddPolicy())
+ssh_client_vmtech.connect(hostname=bridge_ip, username=bridge_user, password=bridge_pwd, allow_agent=True, look_for_keys=True)
 
-db_connection = dbManager.connessione_db_gsegy06(db_name, db_user, db_pwd, db_ip, db_port)
+print(f"\n---------------------------------> Avvio connessione in ssh sul bridge: {bridge_name} ({bridge_ip}) <---------------------------------")
 
-if db_connection : piste = dbManager.select_data_from_tjmd06_lne(db_connection, stazione, rete)
+try :
+    tunnel_ssh = createTunnelSSH(ssh_client_vmtech, db_ip, db_port)
+    db_connection = dbManager.connessione_db_gsegy06(db_name, db_user, db_pwd, db_ip, db_port, tunnel_ssh)
+    if db_connection : piste = dbManager.select_data_from_tjmd06_lne(db_connection, stazione, rete)
+finally:
+    tunnel_ssh.close()
 
 dict_barriera_ottica = {"ip" : ip_barriera_ottica, "stato" : '', "versione" : '', "user" : user_barriera_ottica, "pwd" : pwd_barriera_ottica}
 dict_antenna = {"ip" : ip_antenna, "stato" : '', "versione" : '', "user" : user_antenna, "pwd" : pwd_antenna}
@@ -551,7 +592,7 @@ for j in range(0, len(piste)) :
             
             type_axis = "External" if key == "axis_external" else "Internal"
             dict_pista[key]["ip"] = info_pista
-            stato_axis = checkPingMachine(info_pista, key)
+            stato_axis = checkPingMachine(key, info_pista, bridge_ip, bridge_user, bridge_pwd, ssh_client_vmtech)
             dict_pista[key]["stato"] = stato_axis
             
             if stato_axis == "F" :
@@ -565,7 +606,7 @@ for j in range(0, len(piste)) :
             
             controller_pista = info_pista
             dict_pista[key][0]["ip"] = info_pista
-            dict_pista[key][0]["stato"] = checkPingMachine(info_pista, key)
+            dict_pista[key][0]["stato"] = checkPingMachine(key, info_pista, bridge_ip, bridge_user, bridge_pwd, ssh_client_vmtech)
             
             if dict_pista[key][0]["stato"] == "F" :
                 
@@ -586,10 +627,15 @@ for j in range(0, len(piste)) :
                         dict_periferiche[key]["versione"] = unreachable_vrs
                                 
             else :
-                versione_controller, lista_versione_pacchetti, lista_stato_periferiche, dict_versione_periferiche, stato_transiti_foto = getInfoBySSHSession(controller_pista, 
-                                                                                                        dict_pacchetti_controller, 
-                                                                                                        dict_periferiche, 
-                                                                                                        user_controller, pwd_controller, tipo_pista)
+                versione_controller, lista_versione_pacchetti, lista_stato_periferiche, dict_versione_periferiche, stato_transiti_foto = getInfoBySSHSession (
+                    ssh_client_vmtech,
+                    controller_pista, 
+                    dict_pacchetti_controller, 
+                    dict_periferiche, 
+                    user_controller, 
+                    pwd_controller, 
+                    tipo_pista )
+                
                 dict_pista[key][0]["stato_transiti_foto"] = stato_transiti_foto
                 dict_pista[key][0]["versione"] = versione_controller.strip()
 
@@ -614,6 +660,9 @@ for j in range(0, len(piste)) :
             dict_pista[key] = info_pista
     
     dict_all_piste["Pista_"+ str(codice_pista)] = dict_pista.copy()
+
+print(f"\n---------------------------------> Chiudo connessione in ssh sul bridge: {bridge_name} ({bridge_ip}) <---------------------------------\n")
+ssh_client_vmtech.close()
 
 fine_esecuzione = datetime.now().replace(microsecond=0)
 print(f"Fine esecuzione: {fine_esecuzione}\n")
